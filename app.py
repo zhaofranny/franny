@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import hmac
 from franny.settings import setting
+from franny.errors import explain_error
 from franny.editorial import DIRECTIONS, IDEAS, refresh_review, approve, is_approved, fingerprint
 from franny.cards import render_cards, THEMES
 import streamlit as st
@@ -27,7 +28,7 @@ if password and not st.session_state.get("authenticated"):
                 st.error("口令不正确")
     st.stop()
 st.title("🌿 Franny · 减脂内容工作台")
-st.caption("v0.2 · 邪修减肥大法 / 省力习惯派")
+st.caption("v0.2.1 · 邪修减肥大法 / 省力习惯派")
 st.caption("合法元数据分析 → 原创草稿 → 健康核查 → 本地导出")
 store = Store(os.getenv("DATABASE_PATH", "data/franny.db"))
 with st.sidebar:
@@ -35,7 +36,7 @@ with st.sidebar:
     demo = st.toggle("离线风格示例（非正式生成）", value=False)
     key = st.text_input("OpenAI API Key（仅本次会话）", type="password")
     server_key = setting("OPENAI_API_KEY")
-    api_key = key or (server_key if password else "")
+    api_key = key.strip() or (server_key.strip() if password else "")
     if server_key and not password:
         st.warning("使用服务器密钥前请设置 APP_PASSWORD 访问口令，防止公共访客消耗额度。")
     model = st.text_input("模型", value=setting("OPENAI_MODEL", "gpt-4o-mini"))
@@ -99,8 +100,12 @@ with create_tab:
                 st.session_state["draft_revision"] = str(draft_id)
                 st.session_state.pop("card_images", None)
                 st.session_state.pop("images_hash", None)
-        except Exception:
-            st.error("生成失败：请检查密钥、网络、模型权限或额度，响应不完整时请重试。不会使用模板冒充在线结果。")
+        except Exception as exc:
+            diagnostic = explain_error(exc)
+            st.error(f"生成失败 [{diagnostic['code']}]：{diagnostic['message']}")
+            if diagnostic.get("request_id"):
+                st.caption("服务商请求编号："+diagnostic["request_id"])
+            st.caption("诊断不显示密钥、请求正文或服务商原始错误信息。")
     if "draft" in st.session_state:
         p = st.session_state["draft"]
         revision = st.session_state.get("draft_revision", "legacy")

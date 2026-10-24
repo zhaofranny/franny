@@ -80,3 +80,16 @@ pip check
 `app.py` 为界面；`franny/`包含导入持久化、分析、生成、健康检查、编辑审核、PNG排版、配置和导出模块。`tests/`覆盖数据、模拟OpenAI契约、危险内容、审核失效、PNG、素材导出和Streamlit完整交互。`TEST_RESULTS.md`记录实际检查。
 
 `requirements.txt`声明依赖范围，`requirements.lock.txt`记录原环境精确版本。`packages.txt`用于云端字体。在线模型质量与计费路径仍需部署者使用自己的有效密钥验证；测试模拟成功不代表真实API已调用。
+
+## v0.2.1 生成失败排查
+
+失败时页面显示允许公开的错误分类，不显示原始API错误体、密钥或输入正文：
+
+- `API_AUTH_401`：替换有效的完整API密钥，确认并非ChatGPT登录密码。
+- `API_QUOTA_429`：检查API Billing、项目预算和余额，ChatGPT订阅不包含API额度。
+- `API_RATE_429`：查看用量限制，避免连续重试。
+- `API_PERMISSION_403` / `API_MODEL_404`：核对提供商支持范围、项目权限与模型名称。
+- `API_CONNECTION` / `API_TIMEOUT`：检查部署服务器到api.openai.com的网络。
+- `OUTPUT_VALIDATION` / `OUTPUT_INCOMPLETE` / `CONTENT_CHECK`：模型输出长度、格式、完整性或证据对齐失败，换具体选题重试，不意味着密钥失效。
+
+错误分类不能替代服务商账单/权限后台的具体诊断。刷新后应看到v0.2.1；有必要时在托管平台Reboot。
