@@ -7,6 +7,16 @@ from .settings import setting
 class ProviderConfigError(ValueError):
     pass
 
+class ProviderKeyFormatError(ProviderConfigError):
+    pass
+
+def validate_key(key):
+    # Never echo the input. HTTP authorization headers require printable ASCII.
+    if (not key.isascii() or any(ch.isspace() or not ch.isprintable() for ch in key)
+        or key.lower() in {'your-api-key','your_api_key','sk-xxx','replace-me','your-key'}):
+        raise ProviderKeyFormatError('服务端API密钥包含中文占位文字、空白或不可见字符，或仍是示例值。请在Secrets中替换为官方控制台复制的完整真实密钥；不要发到聊天中。')
+    return key
+
 @dataclass(frozen=True)
 class ProviderSpec:
     label: str
@@ -61,6 +71,8 @@ def load_provider(name=None):
     key=setting(spec.key_env).strip() if spec.key_env else 'ollama'
     if not key:
         raise ProviderConfigError('服务端尚未配置所选模型的API密钥')
+    if name!='ollama':
+        validate_key(key)
     try:
         timeout=int(setting('LLM_TIMEOUT_SECONDS','60'))
         tokens=int(setting('LLM_MAX_TOKENS','2200'))

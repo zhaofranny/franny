@@ -17,6 +17,7 @@ from franny.export import export_bundle
 
 load_dotenv()
 st.set_page_config(page_title="Franny · 原创内容工作台", page_icon="🌿", layout="wide")
+st.caption("Franny v0.3.3 · 服务端密钥检查已启用")
 password = setting("APP_PASSWORD")
 if password and not st.session_state.get("authenticated"):
     st.title("Franny · 创作者登录")
@@ -30,7 +31,7 @@ if password and not st.session_state.get("authenticated"):
                 st.error("口令不正确")
     st.stop()
 st.title("🌿 Franny · 减脂内容工作台")
-st.caption("v0.3.2 · 邪修减肥大法 / 省力习惯派")
+st.caption("v0.3.3 · 邪修减肥大法 / 省力习惯派")
 st.caption("合法元数据分析 → 原创草稿 → 健康核查 → 本地导出")
 store = Store(setting("DATABASE_PATH", "data/franny.db"))
 with st.sidebar:
@@ -116,6 +117,8 @@ with create_tab:
                 st.info(diagnostic['message'])
             else:
                 st.error(f"生成失败 [{diagnostic['code']}]：{diagnostic['message']}")
+            if diagnostic.get("stage"):
+                st.caption("处理阶段："+diagnostic["stage"])
             if diagnostic.get("request_id"):
                 st.caption("服务商请求编号："+diagnostic["request_id"])
             st.caption("诊断不显示密钥、请求正文或服务商原始错误信息。")

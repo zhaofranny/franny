@@ -5,7 +5,19 @@ import re
 import sqlite3
 from openai import APIConnectionError, APITimeoutError, APIStatusError
 from pydantic import ValidationError
-from .providers import ProviderConfigError
+from .providers import ProviderConfigError, ProviderKeyFormatError
+
+SAFE_STAGES = {'provider_config','client_init','model_request','decode_response','validate_copy','validate_draft','evidence_mapping','save_draft'}
+
+def stage_call(stage, function, *args, **kwargs):
+    try:
+        return function(*args, **kwargs)
+    except Exception as exc:
+        # Keep original exception type for status/encoding classification; never copy raw text.
+        if stage in SAFE_STAGES:
+            try: exc.franny_stage = stage
+            except (AttributeError, TypeError): pass
+        raise
 
 class EvidenceValidationError(ValueError):
     pass
@@ -76,15 +88,27 @@ def explain_error(exc, provider=None):
         code,message='OUTPUT_VALIDATION','模型已返回内容，但长度或结构不合要求。可换具体选题或使用纯文案模式；不代表密钥无效。'
     elif isinstance(exc,(GenerationResponseError,json.JSONDecodeError)):
         code,message='OUTPUT_INCOMPLETE','模型输出被截断、拒绝、为空或缺少完整结构。请优先使用纯文案模式，检查服务端输出预算，不会自动重试消耗额度。'
+    elif isinstance(exc,(ProviderKeyFormatError,UnicodeEncodeError)):
+        code,message='KEY_CONFIG_ENCODING','请求配置含HTTP头不支持的字符。请检查服务端API密钥是否仍为中文占位文字、含全角字符或复制错误；不会显示原值，无需更换选题。'
     elif isinstance(exc,ProviderConfigError):
         code,message='PROVIDER_CONFIG','服务端模型配置无效或缺少密钥，请检查所选服务商的Secrets；不需要反复生成。'
     elif isinstance(exc,ValueError):
-        code,message='CONTENT_CHECK','配置、输入或生成内容未通过校验。请检查服务端模型配置、选题与证据引用。'
+        stage=getattr(exc,'franny_stage',None)
+        if stage in {'provider_config','client_init'}:
+            code,message='CLIENT_CONFIG','模型客户端在本地初始化失败，尚未请求模型。请检查服务端密钥、代理和接口配置；不是选题问题。'
+        elif stage=='model_request':
+            code,message='REQUEST_CONFIG','请求在SDK处理阶段失败。请核对服务端密钥、模型和请求参数；不显示原始错误或密钥。'
+        elif stage in {'decode_response','validate_copy','validate_draft','evidence_mapping'}:
+            code,message='RESPONSE_DATA','返回内容不符合处理要求。请根据处理阶段检查模型输出，不需要重配工作台口令。'
+        else:
+            code,message='CONTENT_CHECK','配置、输入或生成内容未通过校验。请维护者检查具体处理阶段，不要反复调用。'
     elif isinstance(exc,sqlite3.Error):
         code,message='STORAGE_ERROR','数据库写入失败，请检查磁盘空间和数据库写权限。'
     else:
         code,message='GENERATION_ERROR','流程出现未分类错误。请维护者检查部署日志；不要公开密钥或完整请求内容。'
     result={'code':code,'message':message}
+    stage=getattr(exc,'franny_stage',None)
+    if stage in SAFE_STAGES: result['stage']=stage
     if status==429: result['retry_after_seconds']=300 if quota_failure(exc) else retry_after(exc)
     if status==402: result['retry_after_seconds']=300
     rid=getattr(exc,'request_id',None) if isinstance(exc,APIStatusError) else None

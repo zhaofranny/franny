@@ -2,7 +2,7 @@ import json
 import re
 from typing import Protocol
 from pydantic import BaseModel, Field, ConfigDict, field_validator
-from .errors import GenerationResponseError, EvidenceValidationError, GenerationInputError
+from .errors import GenerationResponseError, EvidenceValidationError, GenerationInputError, stage_call
 from .providers import load_provider, make_client, extra_parameters
 from .health import SOURCES
 from .editorial import DIRECTIONS, TITLE_BRIEF, refresh_review
@@ -121,11 +121,11 @@ def generate(topic, audience, insights, api_key=None, model=None, demo=False, cl
     else:
         config = None
         if client is None:
-            config = load_provider(provider)
+            config = stage_call('provider_config',load_provider,provider)
             # Credentials must come from the server; legacy explicit key argument is rejected.
             if api_key is not None:
                 raise ValueError('密钥仅允许从服务端配置加载')
-            client = make_client(config)
+            client = stage_call('client_init',make_client,config)
         elif api_key is not None:
             raise ValueError('密钥仅允许从服务端配置加载')
         system = '''你是小红书健康生活原创编辑。只借鉴聚合主题，不改写他人标题/正文。不虚构亲测、瘦了几斤、专家、文献、评论或互动数据。邪修只是幽默栏目名：写省力、反常识、有行动细节的健康习惯，不给危险偏方。不保证爆款或减重效果，禁止极端节食、断水、脱水掉秤、催吐、滥用泻药/利尿剂、补偿性运动、局部减脂和处方药推荐。对未成年人、孕哺期、疾病或进食困扰者不提供减重处方。
@@ -141,19 +141,19 @@ def generate(topic, audience, insights, api_key=None, model=None, demo=False, cl
         args = dict(model=chosen_model, messages=[{'role':'system','content':system},{'role':'user','content':json.dumps({'topic':topic,'audience':audience,'direction':direction,'style_brief':DIRECTIONS[direction],'aggregate_insights':insights,'evidence':SOURCES,'output_schema':output_model.model_json_schema()},ensure_ascii=False)}], response_format={'type':'json_object'},max_tokens=(config.max_tokens if config else 2200))
         if config:
             args.update(extra_parameters(config))
-        response = client.chat.completions.create(**args)
+        response = stage_call('model_request',client.chat.completions.create,**args)
         if not response.choices or getattr(response.choices[0], 'finish_reason', None) in {'length','content_filter'}:
             raise GenerationResponseError('模型未完成响应')
         content = response.choices[0].message.content
         if not content:
             raise GenerationResponseError('模型返回空内容')
-        parsed = decode_response(content)
+        parsed = stage_call('decode_response',decode_response,content)
         if text_only:
-            copy = EditableCopy.model_validate(parsed)
+            copy = stage_call('validate_copy',EditableCopy.model_validate,parsed)
             parsed = copy.model_dump()
             parsed.update(cover_prompt='原创文字封面，以最终标题排版，无身材对比',image_prompts=['原创健康生活字卡'],cards=[])
-        parsed = EditableDraft.model_validate(parsed).model_dump()
-        parsed,evidence_issues = recover_evidence(parsed)
+        parsed = stage_call('validate_draft',EditableDraft.model_validate,parsed).model_dump()
+        parsed,evidence_issues = stage_call('evidence_mapping',recover_evidence,parsed)
         draft = validate_evidence(EditableDraft.model_validate(parsed))
         if not text_only and (len(draft.title_options) < 5 or len(draft.cards) < 3 ):
             raise GenerationResponseError('模型未返回完整标题、图文卡片或核查项')
