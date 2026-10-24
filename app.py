@@ -28,7 +28,7 @@ if password and not st.session_state.get("authenticated"):
                 st.error("口令不正确")
     st.stop()
 st.title("🌿 Franny · 减脂内容工作台")
-st.caption("v0.2.1 · 邪修减肥大法 / 省力习惯派")
+st.caption("v0.2.2 · 邪修减肥大法 / 省力习惯派")
 st.caption("合法元数据分析 → 原创草稿 → 健康核查 → 本地导出")
 store = Store(os.getenv("DATABASE_PATH", "data/franny.db"))
 with st.sidebar:
@@ -85,7 +85,7 @@ with analysis_tab:
         st.bar_chart(ranked.head(15).set_index("title")[["score"]])
 with create_tab:
     st.subheader("邪修减肥大法 · 原创图文")
-    st.caption("用反差和省力动作表达健康习惯；每次生成都会请求在线模型，不保证流量或减重效果。")
+    st.caption("标题强化反差、场景共鸣与轻吐槽，每次给5个不同角度的备选；正文兑现标题，不虚构效果。")
     direction = st.selectbox("栏目方向", list(DIRECTIONS))
     preset = st.selectbox("选题灵感", ["自定义"] + IDEAS)
     topic = st.text_input("选题方向", preset if preset != "自定义" else IDEAS[0], max_chars=200, key="topic_"+preset)
