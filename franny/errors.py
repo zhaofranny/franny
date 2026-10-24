@@ -5,6 +5,13 @@ import re
 import sqlite3
 from openai import APIConnectionError, APITimeoutError, APIStatusError
 from pydantic import ValidationError
+from .providers import ProviderConfigError
+
+class EvidenceValidationError(ValueError):
+    pass
+
+class GenerationInputError(ValueError):
+    pass
 
 class GenerationResponseError(ValueError):
     pass
@@ -56,10 +63,16 @@ def explain_error(exc, provider=None):
         code,message='API_REQUEST_400','模型不支持当前请求参数。请配置支持Chat Completions及JSON输出的模型，优先使用纯文案模式。'
     elif status and status>=500:
         code,message='API_SERVER','模型服务暂时异常，请稍后手动重试。'
+    elif isinstance(exc,EvidenceValidationError):
+        code,message='EVIDENCE_ALIGNMENT','正文与证据引用未对齐，请在编辑区核对来源和正文原句；无需更换密钥。'
+    elif isinstance(exc,GenerationInputError):
+        code,message='INPUT_INVALID','选题不能为空且最多200字，目标人群最多200字，栏目必须是列表中的选项。'
     elif isinstance(exc,ValidationError):
         code,message='OUTPUT_VALIDATION','模型已返回内容，但长度或结构不合要求。可换具体选题或使用纯文案模式；不代表密钥无效。'
     elif isinstance(exc,(GenerationResponseError,json.JSONDecodeError)):
         code,message='OUTPUT_INCOMPLETE','模型输出被截断、拒绝、为空或缺少完整结构。请优先使用纯文案模式，检查服务端输出预算，不会自动重试消耗额度。'
+    elif isinstance(exc,ProviderConfigError):
+        code,message='PROVIDER_CONFIG','服务端模型配置无效或缺少密钥，请检查所选服务商的Secrets；不需要反复生成。'
     elif isinstance(exc,ValueError):
         code,message='CONTENT_CHECK','配置、输入或生成内容未通过校验。请检查服务端模型配置、选题与证据引用。'
     elif isinstance(exc,sqlite3.Error):
