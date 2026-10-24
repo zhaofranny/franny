@@ -71,7 +71,9 @@ def test_openai_contract():
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     assert generate('午餐','成年人',{},client=client)['mode'] == 'openai'
     allowed['source_ids'] = ['invented']
-    with pytest.raises(ValueError): generate('午餐','成年人',{},client=client)
+    recovered = generate('午餐','成年人',{},client=client)
+    assert 'UNKNOWN_SOURCE_ID' in recovered['evidence_issues']
+    assert 'invented' not in recovered['source_ids']
 
 def test_missing_api_key(monkeypatch):
     monkeypatch.delenv('OPENAI_API_KEY',raising=False)

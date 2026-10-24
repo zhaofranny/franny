@@ -7,6 +7,7 @@ from franny.providers import PROVIDERS, ProviderConfigError, load_provider
 from franny.service import create_and_save
 from franny.editorial import DIRECTIONS, IDEAS, refresh_review, approve, is_approved, fingerprint
 from franny.cards import render_cards, THEMES
+from franny.health import SOURCES
 import streamlit as st
 from dotenv import load_dotenv
 from franny.data import Store, parse_csv
@@ -29,7 +30,7 @@ if password and not st.session_state.get("authenticated"):
                 st.error("口令不正确")
     st.stop()
 st.title("🌿 Franny · 减脂内容工作台")
-st.caption("v0.3 · 邪修减肥大法 / 省力习惯派")
+st.caption("v0.3.2 · 邪修减肥大法 / 省力习惯派")
 st.caption("合法元数据分析 → 原创草稿 → 健康核查 → 本地导出")
 store = Store(setting("DATABASE_PATH", "data/franny.db"))
 with st.sidebar:
@@ -111,7 +112,10 @@ with create_tab:
                 st.success("已保存到素材库")
         except Exception as exc:
             diagnostic = explain_error(exc,provider)
-            st.error(f"生成失败 [{diagnostic['code']}]：{diagnostic['message']}")
+            if diagnostic['code'] in {'GENERATION_COOLDOWN','GENERATION_BUSY'}:
+                st.info(diagnostic['message'])
+            else:
+                st.error(f"生成失败 [{diagnostic['code']}]：{diagnostic['message']}")
             if diagnostic.get("request_id"):
                 st.caption("服务商请求编号："+diagnostic["request_id"])
             st.caption("诊断不显示密钥、请求正文或服务商原始错误信息。")
@@ -119,23 +123,30 @@ with create_tab:
         p = st.session_state["draft"]
         revision = st.session_state.get("draft_revision", "legacy")
         st.info("离线风格示例，不能导出正式发布包" if p["mode"] == "offline_template" else "模型原创草稿 · 编辑、核对后导出")
+        if p.get("evidence_issues"):
+            st.warning("文案已保留并保存到素材库，引用关联需要人工处理；无需重复调用模型。请在编辑区核对来源与原句，处理后才能确认正式审核。")
+            st.caption("待处理项："+"、".join(p["evidence_issues"]))
+        if p.get("generation_issues"):
+            st.warning("文案已保存，标题或正文超过发布长度。请在下方编辑区缩短后保存，无需再次付费生成。")
         st.subheader(p["title"])
         st.write(p["body"])
         st.write(" ".join("#"+t.lstrip("#") for t in p["tags"]))
         st.write("备选标题："+" / ".join(p.get("title_options",[])))
         with st.form("editor_"+revision):
-            edited_title = st.text_input("最终标题", p["title"], max_chars=20)
-            edited_body = st.text_area("正文", p["body"], height=300, max_chars=1000)
+            edited_title = st.text_input("最终标题", p["title"], max_chars=100)
+            edited_body = st.text_area("正文", p["body"], height=300, max_chars=6000)
             edited_tags = st.text_input("标签（空格分隔）", " ".join(p["tags"]))
             edited_cards = st.text_area("图文卡片（JSON，可编辑heading和text）",json.dumps(p.get("cards",[]),ensure_ascii=False,indent=2),height=200)
+            edited_sources = st.multiselect("引用来源ID",[s["id"] for s in SOURCES],default=p.get("source_ids",[]))
+            edited_claims = st.text_area("健康主张核查项（JSON，quote须逐字引用正文）",json.dumps(p.get("claims",[]),ensure_ascii=False,indent=2),height=180)
+            resolved = st.checkbox("已逐条处理引用警告，并核对正文与来源",key="evidence_resolved_"+revision) if p.get("evidence_issues") else True
             if st.form_submit_button("保存修改并重新检查"):
                 try:
                     fields = {k:p[k] for k in Draft.model_fields if k in p}
-                    fields.update(title=edited_title, body=edited_body, tags=edited_tags.split(), cards=json.loads(edited_cards))
-                    # Removed/rewritten quotes lose their evidence mapping and need manual rechecking.
-                    fields["claims"] = [c for c in fields.get("claims",[]) if c["quote"] in edited_body]
+                    fields.update(title=edited_title, body=edited_body, tags=edited_tags.split(), cards=json.loads(edited_cards),source_ids=edited_sources,claims=json.loads(edited_claims))
                     updated = validate_draft(fields).model_dump()
                     updated.update({k:p[k] for k in ["mode","direction","schema_version","generation_kind","model","usage"] if k in p})
+                    updated["evidence_issues"] = [] if resolved else p.get("evidence_issues",[])
                     updated = refresh_review(updated)
                     draft_id = store.save_draft(json.dumps(updated,ensure_ascii=False))
                     st.session_state.update(draft=updated,draft_revision=str(draft_id))
@@ -143,7 +154,7 @@ with create_tab:
                     st.session_state.pop("images_hash",None)
                     st.rerun()
                 except (ValueError, TypeError, KeyError):
-                    st.error("修改未保存：请检查标题长度、正文长度及卡片JSON格式")
+                    st.error("修改未保存：请检查标题长度、正文、JSON格式和引用是否逐字对应原句")
         st.warning(p["health_review"]["note"])
         st.write("**健康主张与证据线索（模型提出，需逐句人工核对）**")
         st.dataframe(p.get("claims",[]), hide_index=True, width="stretch")
