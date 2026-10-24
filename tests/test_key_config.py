@@ -39,7 +39,7 @@ def test_frontend_shows_safe_config_warning_without_api_call(tmp_path,monkeypatc
     app.text_input[0].set_value('test-pass');app.button[0].click().run()
     assert not app.exception
     assert next(b for b in app.button if b.label=='生成原创草稿').disabled
-    assert any('中文占位文字' in w.value for w in app.warning)
+    assert any('非ASCII字符' in w.value for w in app.warning)
     assert '仅用于测试的占位文字' not in str(app)
 
 @pytest.mark.parametrize('stage,expected',[('client_init','CLIENT_CONFIG'),('provider_config','CLIENT_CONFIG'),('model_request','REQUEST_CONFIG'),('validate_copy','RESPONSE_DATA')])

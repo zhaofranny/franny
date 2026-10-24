@@ -11,11 +11,18 @@ class ProviderKeyFormatError(ProviderConfigError):
     pass
 
 def validate_key(key):
-    # Never echo the input. HTTP authorization headers require printable ASCII.
-    if (not key.isascii() or any(ch.isspace() or not ch.isprintable() for ch in key)
-        or key.lower() in {'your-api-key','your_api_key','sk-xxx','replace-me','your-key'}):
-        raise ProviderKeyFormatError('服务端API密钥包含中文占位文字、空白或不可见字符，或仍是示例值。请在Secrets中替换为官方控制台复制的完整真实密钥；不要发到聊天中。')
-    return key
+    # Never echo any part of the input; reasons are fixed, safe labels.
+    if not key.isascii():
+        reason='包含非ASCII字符（例如中文、全角引号或全角符号）'
+    elif any(ch.isspace() for ch in key):
+        reason='包含密钥中间的空格、换行或制表符'
+    elif any(not ch.isprintable() for ch in key):
+        reason='包含不可见控制字符'
+    elif key.lower() in {'your-api-key','your_api_key','sk-xxx','replace-me','your-key'}:
+        reason='仍为示例占位值'
+    else:
+        return key
+    raise ProviderKeyFormatError('所选模型的服务端密钥'+reason+'。请仅在当前应用的Secrets中核对对应配置项；程序未发送API请求，不会显示密钥内容。')
 
 @dataclass(frozen=True)
 class ProviderSpec:

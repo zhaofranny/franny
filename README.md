@@ -169,3 +169,9 @@ UTF-8或UTF-8 BOM，1–50000行、最大10MB；时间无时区则按北京时�
 如果页面提示密钥含占位文字，请在Streamlit管理的Secrets中，把DEEPSEEK_API_KEY的示例文字替换成官方平台复制的真实完整密钥。APP_PASSWORD仍是自己设置的工作台口令，不是API Key。不要向聊天发送Secret内容。
 
 后续异常同时显示安全的阶段码（例如client_init、model_request、validate_copy），不显示原始异常、请求头或字段值。无法从截图确认特定账号的实际密钥/调用结果；测试使用明确的合成密钥，不读取用户Secrets。
+
+## v0.3.4 配置来源优先级
+
+修复环境变量优先读取可能导致新Secrets被旧值遮盖的问题：现在始终 `Streamlit Secrets > 服务器环境变量 > 默认值`。Secrets中显式空值不会回退使用旧环境密钥。侧栏显示配置项名称和来源标签，不显示密钥长度、前后缀或内容；异常会区分非ASCII字符、内部空白、控制字符和示例值。
+
+如果你有多个Franny应用，应从当前使用的网址右下角Manage app进入Settings/Secrets，核对的是DEEPSEEK_API_KEY而非APP_PASSWORD，避免改到另一个实例。保存后由平台刷新配置，API密钥仍仅在服务端读取。此修复不证明某个用户实际存在优先级冲突，测试只验证该代码路径可复现并已修正。

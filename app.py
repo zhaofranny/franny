@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 import hmac
-from franny.settings import setting
+from franny.settings import setting, setting_source
 from franny.errors import explain_error
 from franny.providers import PROVIDERS, ProviderConfigError, load_provider
 from franny.service import create_and_save
@@ -17,7 +17,7 @@ from franny.export import export_bundle
 
 load_dotenv()
 st.set_page_config(page_title="Franny · 原创内容工作台", page_icon="🌿", layout="wide")
-st.caption("Franny v0.3.3 · 服务端密钥检查已启用")
+st.caption("Franny v0.3.4 · 服务端密钥检查已启用")
 password = setting("APP_PASSWORD")
 if password and not st.session_state.get("authenticated"):
     st.title("Franny · 创作者登录")
@@ -31,7 +31,7 @@ if password and not st.session_state.get("authenticated"):
                 st.error("口令不正确")
     st.stop()
 st.title("🌿 Franny · 减脂内容工作台")
-st.caption("v0.3.3 · 邪修减肥大法 / 省力习惯派")
+st.caption("v0.3.4 · 邪修减肥大法 / 省力习惯派")
 st.caption("合法元数据分析 → 原创草稿 → 健康核查 → 本地导出")
 store = Store(setting("DATABASE_PATH", "data/franny.db"))
 with st.sidebar:
@@ -40,6 +40,9 @@ with st.sidebar:
     default_provider=setting("LLM_PROVIDER","deepseek")
     names=list(PROVIDERS)
     provider=st.selectbox("模型服务",names,index=names.index(default_provider) if default_provider in names else 0,format_func=lambda n:PROVIDERS[n].label)
+    key_field=PROVIDERS[provider].key_env
+    if key_field:
+        st.caption("配置项："+key_field+" · 来源："+setting_source(key_field))
     config=None
     try:
         config=load_provider(provider)
