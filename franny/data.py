@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import io
 import math
 import sqlite3
+import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 import pandas as pd
@@ -64,6 +65,7 @@ class Store:
         self.path = str(path)
         with self.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS notes(title TEXT NOT NULL,url TEXT PRIMARY KEY,published_at TEXT NOT NULL,likes INTEGER,saves INTEGER,comments INTEGER)")
+            db.execute("CREATE TABLE IF NOT EXISTS generation_limits(provider TEXT PRIMARY KEY,next_allowed REAL NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS drafts(id INTEGER PRIMARY KEY,created_at TEXT DEFAULT CURRENT_TIMESTAMP,payload TEXT NOT NULL)")
     @contextmanager
     def connect(self):
@@ -86,3 +88,27 @@ class Store:
     def drafts(self):
         with self.connect() as db:
             return db.execute("SELECT id,created_at,payload FROM drafts ORDER BY id DESC").fetchall()
+
+    def reserve_generation(self, provider, interval=8, now=None):
+        from .errors import GenerationCooldownError
+        now = time.time() if now is None else now
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT next_allowed FROM generation_limits WHERE provider=?", (provider,)).fetchone()
+            if row and row[0] > now:
+                raise GenerationCooldownError(math.ceil(row[0]-now))
+            db.execute("INSERT INTO generation_limits VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET next_allowed=excluded.next_allowed",(provider,now+interval))
+
+    def set_cooldown(self, provider, seconds, now=None):
+        now = time.time() if now is None else now
+        with self.connect() as db:
+            db.execute("INSERT INTO generation_limits VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET next_allowed=MAX(next_allowed,excluded.next_allowed)",(provider,now+seconds))
+
+    def backup_bytes(self):
+        # SQLite online backup includes committed WAL state; never copy live database files directly.
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'franny.sqlite'
+            with self.connect() as source, sqlite3.connect(path) as target:
+                source.backup(target)
+            return path.read_bytes()

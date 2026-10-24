@@ -48,7 +48,7 @@ def render_cards(payload, theme='奶油绿'):
         draw_text(d,'FRANNY / 省力生活研究所',(104,110),870,28,ink,80)
         draw_text(d,page['heading'],(104,300),850,86 if index==0 else 66,ink,430)
         draw_text(d,page['text'],(104,800 if index==0 else 760),850,38,ink,400)
-        footer = '风格示例 · 非在线生成' if payload.get('mode') != 'openai' else '健康科普 · 个体情况不同'
+        footer = '风格示例 · 非在线生成' if payload.get('mode') == 'offline_template' else '健康科普 · 个体情况不同'
         draw_text(d,footer,(104,1260),740,25,ink,70)
         draw_text(d,f'{index+1:02d}/{len(pages):02d}',(890,1260),100,24,accent,70)
         buf=io.BytesIO();im.save(buf,format='PNG');output[f'{index+1:02d}.png']=buf.getvalue()

@@ -39,7 +39,7 @@ def fingerprint(p):
 
 def approve(p, reviewer, notes):
     p = refresh_review(p)
-    if p.get('mode') != 'openai':
+    if p.get('mode') not in {'openai','deepseek','qwen','ollama'}:
         raise ValueError('离线示例不能标记为正式发布素材，请使用在线生成')
     if p['health_review']['status'] == 'blocked':
         raise ValueError('健康风险未解决，不能确认审核')
@@ -49,5 +49,5 @@ def approve(p, reviewer, notes):
     return p
 
 def is_approved(p):
-    return (p.get('mode') == 'openai' and p.get('approval',{}).get('content_sha256') == fingerprint(p)
+    return (p.get('mode') in {'openai','deepseek','qwen','ollama'} and p.get('approval',{}).get('content_sha256') == fingerprint(p)
             and review(public_text(p))['status'] != 'blocked')

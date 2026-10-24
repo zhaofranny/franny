@@ -8,7 +8,7 @@ def export_bundle(payload, images=None, *, publish_ready=False):
     if payload['health_review']['status'] == 'blocked' or review(public_text(payload))['status'] == 'blocked':
         raise ValueError('含高风险健康表述，请修改后重新检查')
     if publish_ready and not is_approved(payload):
-        raise ValueError('正式素材必须为在线生成且通过当前版本的人工审核')
+        raise ValueError('正式素材必须为模型生成且通过当前版本的人工审核')
     if publish_ready and not images:
         raise ValueError('请先生成当前版本的图片')
     md = f"# {payload['title']}\n\n{payload['body']}\n\n" + ' '.join('#'+t.lstrip('#') for t in payload['tags'])

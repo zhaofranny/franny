@@ -5,3 +5,6 @@ headless = true
 gatherUsageStats = false
 [theme]
 primaryColor = "#2C8068"
+
+[client]
+showErrorDetails = "none"

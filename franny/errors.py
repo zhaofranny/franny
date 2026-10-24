@@ -1,5 +1,6 @@
 """Allowlisted diagnostics: never render raw API bodies, headers or credentials."""
 import json
+import math
 import re
 import sqlite3
 from openai import APIConnectionError, APITimeoutError, APIStatusError
@@ -8,39 +9,66 @@ from pydantic import ValidationError
 class GenerationResponseError(ValueError):
     pass
 
-def explain_error(exc):
-    status = getattr(exc,'status_code',None) if isinstance(exc,APIStatusError) else None
-    api_code = getattr(exc,'code',None) if isinstance(exc,APIStatusError) else None
+class GenerationCooldownError(ValueError):
+    def __init__(self, seconds):
+        self.seconds=max(1,int(seconds))
+        super().__init__('生成冷却中')
+
+def quota_failure(exc):
+    # Some compatible services nest their code. Inspect privately, never echo raw text.
+    body=getattr(exc,'body',None)
+    body=body if isinstance(body,dict) else {}
+    nested=body.get('error',{})
+    nested=nested if isinstance(nested,dict) else {}
+    codes=[getattr(exc,'code',None),body.get('code'),nested.get('code')]
+    known={'insufficient_quota','billing_hard_limit_reached','billing_not_active','insufficient_balance','arrearage','quota.freeallocatedquota','prepaidbalanceexhausted'}
+    if any(isinstance(c,str) and c.lower() in known for c in codes): return True
+    msgs=[body.get('message'),nested.get('message')]
+    return any(isinstance(m,str) and any(t in m.lower() for t in ['insufficient_quota','insufficient balance','余额不足','账户欠费']) for m in msgs)
+
+def retry_after(exc):
+    response=getattr(exc,'response',None)
+    try:
+        value=float(response.headers.get('retry-after','60')) if response is not None else 60
+        if not math.isfinite(value): raise ValueError()
+        return max(30,min(900,math.ceil(value)))
+    except (ValueError,TypeError): return 60
+
+def explain_error(exc, provider=None):
+    status=getattr(exc,'status_code',None) if isinstance(exc,APIStatusError) else None
+    if isinstance(exc,GenerationCooldownError):
+        return {'code':'GENERATION_COOLDOWN','message':f'冷却中，请约{exc.seconds}秒后手动重试；没有再次调用模型。','retry_after_seconds':exc.seconds}
     if isinstance(exc,APITimeoutError):
-        code, message = 'API_TIMEOUT','连接模型超时。请稍后重试；若持续出现，请检查部署服务器到 api.openai.com 的连接。'
+        code,message='API_TIMEOUT','连接模型超时。请检查部署服务器到所选模型官方接口的网络，稍后手动重试。'
     elif isinstance(exc,APIConnectionError):
-        code, message = 'API_CONNECTION','部署服务器无法连接 OpenAI。请检查服务器出站网络、DNS和TLS；不是你浏览器的本地连接。'
-    elif status == 401:
-        code, message = 'API_AUTH_401','OpenAI 拒绝了密钥。请从 OpenAI API Keys 页面复制完整有效密钥，确认未撤销、没有误填登录密码；替换后按回车。'
-    elif status == 429 and api_code in {'insufficient_quota','billing_hard_limit_reached','billing_not_active'}:
-        code, message = 'API_QUOTA_429','API 余额或项目预算不足。请检查 OpenAI API Billing、项目预算和用量限制；ChatGPT 订阅不包含 API 额度。充值或调整限制后再试。'
-    elif status == 429:
-        code, message = 'API_RATE_429','请求被限流，或 API 项目额度受限。请先查看 OpenAI API 用量与账单；余额正常时等待片刻再试，避免连续点击。'
-    elif status == 403:
-        code, message = 'API_PERMISSION_403','OpenAI 拒绝访问。请检查项目/密钥权限、服务支持地区及提供商政策；具体原因需在提供商后台确认。'
-    elif status == 404:
-        code, message = 'API_MODEL_404','模型不存在或当前项目无权访问。请确认模型名称和项目权限；可使用该项目已开放的模型。'
-    elif status == 400:
-        code, message = 'API_REQUEST_400','模型拒绝了请求参数。请确认使用支持 Chat Completions 与 JSON 输出的模型（如有权使用的 gpt-4o-mini）。'
-    elif status and status >= 500:
-        code, message = 'API_SERVER','OpenAI 服务暂时异常，请稍后重试。'
+        code,message='API_CONNECTION','部署服务器无法连接所选模型。请检查出站网络、DNS、TLS和服务端地址；本机模型必须运行在同一台服务器上。'
+    elif status==401:
+        code,message='API_AUTH_401','模型服务鉴权失败。请在服务端更新对应服务商的有效密钥，并检查千问密钥与接口地域是否一致。'
+    elif status==402 or (status in {400,403,429} and quota_failure(exc)):
+        code,message='API_QUOTA_429' if status==429 else 'API_QUOTA','所选模型的官方API额度或余额不足。请查看对应服务商的账单及项目预算；更换Codex/ChatGPT套餐不能解决API余额问题。不会自动重试或转用其他付费服务。'
+    elif status==429:
+        code,message='API_RATE_429','所选模型返回429，可能是请求频率、并发或未明确说明的额度限制。已暂停重复调用；请查看官方用量/账单，冷却后手动重试。'
+    elif status==403:
+        code,message='API_PERMISSION_403','所选服务商拒绝访问，请检查账号、项目权限、地域及服务开通状态。'
+    elif status==404:
+        code,message='API_MODEL_404','模型不存在、未下载或项目无权使用。请检查服务端模型名称；本机Ollama需先下载对应模型。'
+    elif status in {400,422}:
+        code,message='API_REQUEST_400','模型不支持当前请求参数。请配置支持Chat Completions及JSON输出的模型，优先使用纯文案模式。'
+    elif status and status>=500:
+        code,message='API_SERVER','模型服务暂时异常，请稍后手动重试。'
     elif isinstance(exc,ValidationError):
-        code, message = 'OUTPUT_VALIDATION','模型已返回内容，但标题长度、正文或图文卡片等字段不符合要求。可重新生成，或缩小选题范围；这不等于密钥无效。'
+        code,message='OUTPUT_VALIDATION','模型已返回内容，但长度或结构不合要求。可换具体选题或使用纯文案模式；不代表密钥无效。'
     elif isinstance(exc,(GenerationResponseError,json.JSONDecodeError)):
-        code, message = 'OUTPUT_INCOMPLETE','模型输出被截断、拒绝生成或缺少完整结构。请换一个具体健康生活选题后重试；不要反复检查密钥。'
+        code,message='OUTPUT_INCOMPLETE','模型输出被截断、拒绝、为空或缺少完整结构。请优先使用纯文案模式，检查服务端输出预算，不会自动重试消耗额度。'
     elif isinstance(exc,ValueError):
-        code, message = 'CONTENT_CHECK','输入或模型内容未通过完整性与证据引用检查。请检查选题、人群、模型设置后重试。'
+        code,message='CONTENT_CHECK','配置、输入或生成内容未通过校验。请检查服务端模型配置、选题与证据引用。'
     elif isinstance(exc,sqlite3.Error):
-        code, message = 'STORAGE_ERROR','草稿写入数据库失败。请检查部署服务的磁盘空间与数据库写权限。'
+        code,message='STORAGE_ERROR','数据库写入失败，请检查磁盘空间和数据库写权限。'
     else:
-        code, message = 'GENERATION_ERROR','生成流程出现未分类错误。请让维护者根据此代码检查部署日志，切勿公开密钥或完整请求内容。'
+        code,message='GENERATION_ERROR','流程出现未分类错误。请维护者检查部署日志；不要公开密钥或完整请求内容。'
     result={'code':code,'message':message}
+    if status==429: result['retry_after_seconds']=300 if quota_failure(exc) else retry_after(exc)
+    if status==402: result['retry_after_seconds']=300
     rid=getattr(exc,'request_id',None) if isinstance(exc,APIStatusError) else None
-    if isinstance(rid,str) and re.fullmatch(r'req_[A-Za-z0-9_-]{1,100}',rid):
-        result['request_id']=rid
+    if isinstance(rid,str) and re.fullmatch(r'req_[A-Za-z0-9_-]{1,100}',rid): result['request_id']=rid
     return result

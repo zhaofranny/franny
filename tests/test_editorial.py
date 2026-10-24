@@ -91,11 +91,15 @@ def test_formal_ui_review_and_export(tmp_path,monkeypatch):
         p=real('省力习惯','成年人',{},demo=True)
         p['mode']='openai'
         return p
-    monkeypatch.setattr(generation,'generate',fake)
+    import franny.service as service
+    monkeypatch.setattr(service,'generate',fake)
     monkeypatch.setenv('DATABASE_PATH',str(tmp_path/'flow.db'))
-    monkeypatch.delenv('APP_PASSWORD',raising=False)
+    monkeypatch.setenv('APP_PASSWORD','test-passphrase')
+    monkeypatch.setenv('LLM_PROVIDER','openai')
+    monkeypatch.setenv('OPENAI_API_KEY','server-only-test-key')
     app=AppTest.from_file(str(Path(__file__).resolve().parents[1]/'app.py'),default_timeout=15).run()
-    next(w for w in app.text_input if 'API Key' in w.label).set_value('mock-key').run()
+    app.text_input[0].set_value('test-passphrase')
+    app.button[0].click().run()
     next(b for b in app.button if b.label=='生成原创草稿').click().run()
     assert not app.exception
     next(b for b in app.button if b.label=='生成原创封面和配图 PNG').click().run()

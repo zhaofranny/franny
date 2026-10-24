@@ -3,6 +3,6 @@ __pycache__/
 .pytest_cache/
 .env
 .streamlit/secrets.toml
-data/*.db*
+data/
 exports/
 work/
