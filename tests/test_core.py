@@ -61,7 +61,7 @@ def test_generation_and_export():
 
 def test_openai_contract():
     expected = generate('午餐','成年人',{},demo=True)
-    allowed = {k:v for k,v in expected.items() if k not in {'mode','health_review'}}
+    allowed = {k:v for k,v in expected.items() if k not in {'mode','health_review','direction','schema_version'}}
     class Completions:
         def create(self, **kwargs):
             assert kwargs['response_format'] == {'type':'json_object'}

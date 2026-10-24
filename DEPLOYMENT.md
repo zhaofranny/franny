@@ -1,24 +1,33 @@
-# 云端访问与部署
+# 云端部署 v0.2
 
-本项目必须运行在支持 Python 长驻进程与 WebSocket 的服务上。云端容器的 localhost 不等于访问者电脑的 localhost；0.0.0.0 是监听地址，也不是可访问域名。当前 Codex 会话没有可调用的入站端口转发工具。
+仓库 `zhaofranny/franny`，分支 `feature/franny-mvp-cloud`，入口 `app.py`，Python 3.12。
 
-## Streamlit Community Cloud（适合先体验）
+## 已部署实例升级
 
-1. 登录 https://share.streamlit.io/ ，连接有权访问 zhaofranny/franny 的 GitHub 账户。
-2. Create app：仓库 `zhaofranny/franny`，分支 `feature/franny-mvp-cloud`，入口 `app.py`，Python 3.12。
-3. 点击 Deploy，等待安装完成，打开平台实际生成的 `https://….streamlit.app` 地址。
-4. 默认无需密钥，可加载虚构示例并体验离线模板。API密钥仅在侧栏临时填写，勿提交至GitHub。在线调用还需要部署服务可访问api.openai.com。
+如果Streamlit实例跟踪上述分支，GitHub分支更新后通常会自动重新部署；等待平台完成安装。新增 `packages.txt` 用于中文字体。若字体未安装，在应用管理界面Reboot后重试。界面应显示 `v0.2 · 邪修减肥大法 / 省力习惯派`。
 
-**数据保留：** Community Cloud 本地SQLite不是持久存储保证，重启/休眠/重部署可能丢失数据。适合示例体验；真实业务需要持久磁盘及备份。使用平台的访问控制限制访问人群，当前应用本身没有登录隔离。
+默认正式在线模式，没有API密钥不能生成。侧栏可临时输入自己的密钥。若使用服务器密钥，在应用管理的Secrets中设置：
 
-## 支持持久磁盘的云服务器
+```toml
+OPENAI_API_KEY = "你自己的OpenAI密钥"
+OPENAI_MODEL = "gpt-4o-mini"
+APP_PASSWORD = "你自己设置的强口令"
+```
 
-部署源代码并安装 requirements.lock.txt；将环境变量 DATABASE_PATH 设置为挂载持久磁盘中的绝对路径。运行：
+不把真实密钥或口令提交到Git，也不要发给聊天。保存配置后刷新，输入访问口令；只有设置访问口令才会启用服务器密钥。需要模型权限、余额及api.openai.com出站访问。
+
+## 新部署
+
+登录 https://share.streamlit.io/ ，Create app，填写上述仓库/分支/入口，点击Deploy，使用平台实际生成的URL。云端容器localhost和私有IP不是访问者可用地址。
+
+Community Cloud本地SQLite不是持久存储保证。示例体验可以使用；存放真实数据应部署到具有持久磁盘的Python服务器，设置 `DATABASE_PATH` 为磁盘路径，启用访问控制并定期备份。现有单口令不提供多租户隔离。
+
+## 自建服务器
+
+安装依赖、中文字体后，使用进程管理器常驻运行：
 
 ```bash
 .venv/bin/python -m streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-通过主机平台入口或反向代理提供 HTTPS 域名并启用 WebSocket 转发，健康检查路径 `/_stcore/health`。加入身份验证后再存放真实数据。不要把云端私有IP或localhost当成用户可访问的地址。
-
-部署账号授权/创建服务需要由对应账号拥有者完成。只有托管平台返回成功状态和真实URL后才能确认已部署。
+配置HTTPS反向代理与WebSocket，健康检查 `/_stcore/health`。通过平台生成的域名或自己的域名访问。当前会话无法查看你的Streamlit部署日志，也无法代填部署账号Secrets；GitHub同步成功不等于外部部署已成功。
