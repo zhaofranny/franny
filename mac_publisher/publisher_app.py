@@ -1,0 +1,121 @@
+import json
+import hashlib
+import os
+import subprocess
+import sys
+import uuid
+from pathlib import Path
+import streamlit as st
+from xhs_publisher import VERSION
+from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
+from xhs_publisher.journal import Journal,atomic_json
+
+BASE=Path(__file__).resolve().parent
+LOCAL=BASE/'.local';LOCAL.mkdir(exist_ok=True);LOCAL.chmod(0o700)
+JOURNAL=Journal(LOCAL)
+st.set_page_config(page_title='Franny · Mac本地发布',page_icon='🌿',layout='wide')
+st.title('🌿 Franny · Mac 本地发布')
+st.caption(f'v{VERSION} · 单账号 · 真实浏览器 · 不调用私有发布API · 结果不明不自动重发')
+
+
+def start(action,*extra):
+    command=[sys.executable,'-m','xhs_publisher.worker',action,'--base',str(BASE),*extra]
+    log=(LOCAL/'worker.log').open('a',encoding='utf-8')
+    try: return subprocess.Popen(command,cwd=BASE,stdout=log,stderr=log,start_new_session=True).pid
+    finally: log.close()
+
+def read_json(path):
+    try: return json.loads(path.read_text(encoding='utf-8'))
+    except (FileNotFoundError,json.JSONDecodeError): return {}
+
+login,material,history=st.tabs(['① 登录账号','② 预览与发布','③ 发布记录'])
+with login:
+    st.write('首次使用先手动登录。浏览器数据只保存在本机专用配置目录，不读取你的日常Chrome配置，也不导出Cookie。')
+    st.caption('使用前需确认你的操作符合平台当前规则。出现登录、验证码或风控时，由你手动处理，工具不会绕过。')
+    if st.button('打开浏览器，手动登录'):
+        atomic_json(LOCAL/'login_status.json',{'state':'starting','message':'正在打开独立浏览器…'})
+        st.session_state['login_pid']=start('login')
+    @st.fragment(run_every=2)
+    def login_progress():
+        state=read_json(LOCAL/'login_status.json')
+        if state: st.info(state.get('message',state['state']))
+        account=read_json(LOCAL/'account.json')
+        if account: st.success('本地绑定的浏览器显示名：'+account['account_name'])
+    login_progress()
+with material:
+    st.write('导入现有Franny导出的待审核ZIP（必须含真实图片），或自行输入标题、正文和原创图片。默认不会发布。')
+    zipped=st.file_uploader('导入素材 ZIP',type=['zip'],key='bundle_zip')
+    if zipped and st.button('读取素材包'):
+        try:
+            root=import_zip(zipped.getvalue(),LOCAL/'bundles'/uuid.uuid4().hex)
+            m,files,_=load_bundle(root)
+            st.session_state['imported']={'title':m.title,'body':m.body,'tags':' '.join(m.tags),'images':[str(p) for p in files]}
+            st.session_state['editor_key']=uuid.uuid4().hex
+            st.session_state.pop('preview',None)
+            st.rerun()
+        except (BundleError,ValueError): st.error('素材ZIP不完整或含不合规内容，请检查格式和图片；离线模板不能发布')
+    seed=st.session_state.get('imported',{})
+    revision=st.session_state.get('editor_key','initial')
+    title=st.text_input('最终标题',seed.get('title',''),max_chars=20,key='title_'+revision)
+    body=st.text_area('正文',seed.get('body',''),height=240,max_chars=1000,key='body_'+revision)
+    tags=st.text_input('话题（空格分隔，填写名称即可）',seed.get('tags',''),key='tags_'+revision)
+    uploads=st.file_uploader('选择本地原创/已获授权图片，按顺序上传',type=['png','jpg','jpeg','webp'],accept_multiple_files=True)
+    ai=st.checkbox('内容包含AI生成文字或图片（会核验平台AI声明控件）',value=True)
+    original=st.checkbox('这是我有权声明原创的内容',value=True)
+    if st.button('生成本地预览（不发布）'):
+        try:
+            root=LOCAL/'bundles'/uuid.uuid4().hex;root.mkdir(parents=True)
+            images=[]
+            if uploads:
+                for i,item in enumerate(uploads):
+                    ext=Path(item.name).suffix.lower();relative=f'images/{i+1:02d}{ext}'
+                    (root/'images').mkdir(exist_ok=True);(root/relative).write_bytes(item.getvalue());images.append(relative)
+            else:
+                for i,path in enumerate(seed.get('images',[])):
+                    source=Path(path);relative=f'images/{i+1:02d}{source.suffix.lower()}'
+                    (root/'images').mkdir(exist_ok=True);(root/relative).write_bytes(source.read_bytes());images.append(relative)
+            m=Manifest(title=title,body=body,tags=tags.split(),images=images,ai_generated=ai,original_content=original)
+            atomic_json(root/'manifest.json',m.model_dump())
+            _,files,fingerprint=load_bundle(root)
+            st.session_state['preview']={'root':str(root),'fingerprint':fingerprint,'editor':{'title':title,'body':body,'tags':tags,'ai':ai,'original':original},'upload_hashes':[hashlib.sha256(f.getvalue()).hexdigest() for f in uploads]}
+        except Exception: st.error('预览未生成：请填写合规标题/正文，提供1–18张有效且不重复的图片，检查话题格式与高风险健康表述')
+    preview=st.session_state.get('preview')
+    editor_now={'title':title,'body':body,'tags':tags,'ai':ai,'original':original}
+    if preview:
+        try:
+            m,files,fingerprint=load_bundle(preview['root'])
+            changed=editor_now!=preview['editor'] or [hashlib.sha256(f.getvalue()).hexdigest() for f in uploads]!=preview['upload_hashes'] or fingerprint!=preview['fingerprint']
+            if changed: st.warning('编辑内容发生变化，请重新生成预览；旧预览不能提交')
+            st.subheader('本次将发布的内容')
+            st.write(m.title);st.write(m.body);st.write(' '.join('#'+t for t in m.tags));st.image([str(f) for f in files],width=230)
+            account=read_json(LOCAL/'account.json').get('account_name')
+            st.write('目标浏览器账号：'+(account or '尚未登录绑定'))
+            rights=st.checkbox('我有权发布这些文字和图片，已完成健康事实核查，并确认账号、内容和AI声明真实',key='rights_'+fingerprint)
+            permitted=st.checkbox('我已核对平台当前规则，确认此次本地网页自动化操作在允许范围内',key='permitted_'+fingerprint)
+            retry=st.checkbox('仅重新准备上次“尚未提交”就失败的同一素材（不会重发已提交任务）',key='retry_'+fingerprint)
+            if st.button('确认并发布到小红书',type='primary',disabled=changed or not account or not rights or not permitted):
+                job,created=JOURNAL.reserve(account,fingerprint,retry)
+                if created:
+                    args=['--bundle',preview['root'],'--approved-hash',fingerprint,'--job-id',job]
+                    if retry: args.append('--retry-preparation')
+                    start('publish',*args)
+                    st.session_state['active_job']=job
+                    st.info('已启动一次发布任务，请勿关闭独立浏览器。可在发布记录查看真实状态。')
+                else:
+                    st.session_state['active_job']=job
+                    st.info('同一账号与素材已有任务，本次未启动重复发布；请查看原记录。')
+        except (BundleError,ValueError): st.error('预览素材已损坏或变化，请重新预览')
+with history:
+    st.caption('只有取得新笔记ID和明确平台状态才显示已发布；审核中、提交待核验和结果不明分开记录。遇到不明结果，先去官方创作者平台核对，不自动重发。')
+    labels={'preparing':'正在准备','ready':'准备完成','submitting':'正在提交','published':'已发布','pending_review':'平台审核中','submitted_unverified':'已提交，待核验','unknown':'结果不明，禁止自动重发','blocked':'登录/账号/平台限制','failed_pre_submit':'提交前失败，可明确重试准备','rejected':'平台未通过'}
+    @st.fragment(run_every=2)
+    def jobs_progress():
+        for job in JOURNAL.history():
+            with st.expander(f"{labels.get(job['state'],job['state'])} · {job['result'].get('title','图文任务')} · {job['id'][:8]}"):
+                st.json(job)
+                url=job['result'].get('note_url')
+                if url: st.link_button('查看笔记链接',url)
+                path=BASE/'output'/job['id']/'before_submit.png'
+                if path.is_file(): st.image(str(path),caption='提交前页面，仅保存在本机')
+                st.download_button('下载此任务记录',json.dumps(job,ensure_ascii=False,indent=2),job['id']+'.json',key='receipt_'+job['id'])
+    jobs_progress()
