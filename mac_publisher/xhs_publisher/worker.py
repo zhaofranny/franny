@@ -6,6 +6,7 @@ from .adapter import BrowserAdapter,PublishError,HOME
 from .config import load_selectors
 from .journal import Journal,profile_lock,atomic_json,JobConflict
 from .engine import publish
+from .session import run_session
 
 
 def browser_context(p,profile):
@@ -27,7 +28,7 @@ def run(args):
         try:
           adapter=BrowserAdapter(ctx,load_selectors(base))
           if args.action=='login':
-            atomic_json(status,{'state':'waiting_for_login','message':'请在打开的独立浏览器中手动登录，账号识别后会关闭窗口；不自动填写验证码'})
+            atomic_json(status,{'state':'waiting_for_login','message':'请在打开的独立浏览器中手动登录，登录后请保持此窗口打开，发布复用同一会话；不自动填写验证码'})
             # Login is user-driven. No use of browser cookies outside the persistent profile.
             response=adapter.page.goto(HOME,wait_until='domcontentloaded',timeout=30000)
             if response and response.status>=400: raise PublishError('PLATFORM_HTTP_DENIED','官方页面访问失败，未保存账号')
@@ -37,7 +38,9 @@ def run(args):
                 except PublishError: name=None
                 if name:
                     atomic_json(account_file,{'account_name':name,'verified_at':time.time()})
-                    atomic_json(status,{'state':'logged_in','account_name':name,'message':'已识别当前浏览器显示名；请在工作台确认是你要使用的账号'})
+                    atomic_json(status,{'state':'logged_in','account_name':name,'message':'账号已识别，请保持独立Chrome打开；发布任务将使用此同一会话'})
+                    run_session(adapter,journal,base,name)
+                    atomic_json(status,{'state':'closed','message':'独立浏览器已关闭；再次发布前请重新打开登录，不必重新生成素材'})
                     return 0
                 adapter.page.wait_for_timeout(1000)
             atomic_json(status,{'state':'login_required','message':'180秒内未识别账号，请手动登录后重试；若已登录则需适配账号DOM选择器'})

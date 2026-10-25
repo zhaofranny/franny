@@ -9,6 +9,7 @@ import streamlit as st
 from xhs_publisher import VERSION
 from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
 from xhs_publisher.journal import Journal,atomic_json
+from xhs_publisher.session import session_state,enqueue,SessionUnavailable
 from xhs_publisher.production import SPECS,settings,generate,build_bundle,ProductionError
 
 BASE=Path(__file__).resolve().parent
@@ -20,6 +21,11 @@ st.caption(f'v{VERSION} · 单账号 · 真实浏览器 · 不调用私有发布
 
 
 def start(action,*extra):
+    if action=='publish':
+        args=dict(zip(extra[::2],extra[1::2]))
+        return enqueue(LOCAL,args['--bundle'],args['--approved-hash'],args['--job-id'],'--retry-preparation' in extra)
+    active=session_state(LOCAL)
+    if active.get('state') in {'ready','busy'}: return active['pid']
     command=[sys.executable,'-m','xhs_publisher.worker',action,'--base',str(BASE),*extra]
     log=(LOCAL/'worker.log').open('a',encoding='utf-8')
     try: return subprocess.Popen(command,cwd=BASE,stdout=log,stderr=log,start_new_session=True).pid
@@ -42,9 +48,15 @@ with login:
         if state: st.info(state.get('message',state['state']))
         account=read_json(LOCAL/'account.json')
         if account: st.success('本地绑定的浏览器显示名：'+account['account_name'])
+        active=session_state(LOCAL)
+        if active.get('state')=='ready': st.success('实时浏览器会话已就绪，请保持独立Chrome打开')
+        elif active.get('state')=='busy': st.info('同一浏览器正在执行任务，请查看③发布记录')
+        else: st.warning('当前没有就绪的实时浏览器会话。绑定名称只是历史记录，请点击上方登录按钮。')
     login_progress()
 with material:
     st.subheader('选题 → 原创文案与图卡 → 发布')
+    if st.button('刷新实时浏览器会话状态'): st.rerun()
+    if session_state(LOCAL).get('state')!='ready': st.info('发布前请到①打开并登录独立Chrome，保持窗口打开；登录完成后点击刷新实时浏览器会话状态。')
     provider=st.selectbox('文案模型服务',list(SPECS))
     topic=st.text_input('今天的选题','减脂人，别再和意志力硬刚了',max_chars=300)
     st.caption('生成3个标题、150–300字正文、5个话题和4张原创文字图卡。密钥仅读取本机环境变量、Streamlit Secrets或.local/generation.json。规则检查不代替人工健康事实核查。')
@@ -116,12 +128,16 @@ with material:
             rights=st.checkbox('我有权发布这些文字和图片，已完成健康事实核查，并确认账号、内容和AI声明真实',key='rights_'+fingerprint)
             permitted=st.checkbox('我已核对平台当前规则，确认此次本地网页自动化操作在允许范围内',key='permitted_'+fingerprint)
             retry=st.checkbox('仅重新准备上次“尚未提交”就失败的同一素材（不会重发已提交任务）',key='retry_'+fingerprint)
-            if st.button('确认并发布到小红书',type='primary',disabled=changed or not account or not rights or not permitted):
+            if st.button('确认并发布到小红书',type='primary',disabled=changed or not account or not rights or not permitted or session_state(LOCAL).get('state')!='ready'):
                 job,created=JOURNAL.reserve(account,fingerprint,retry)
                 if created:
                     args=['--bundle',preview['root'],'--approved-hash',fingerprint,'--job-id',job]
                     if retry: args.append('--retry-preparation')
-                    start('publish',*args)
+                    try: start('publish',*args)
+                    except SessionUnavailable as exc:
+                        JOURNAL.update(job,'failed_pre_submit',code='SESSION_NOT_READY',message=str(exc))
+                        st.error(str(exc))
+                        st.stop()
                     st.session_state['active_job']=job
                     st.info('已启动一次发布任务，请勿关闭独立浏览器。可在发布记录查看真实状态。')
                 else:
@@ -139,7 +155,7 @@ with history:
                 url=job['result'].get('note_url')
                 if url: st.link_button('查看笔记链接',url)
                 if job['result'].get('code')=='LOGIN_REQUIRED':
-                    st.warning('本次在提交前遇到登录页。先查看保留的Chrome窗口；关闭该窗口后再到①重新登录，不必重新生成素材。')
+                    st.warning('本次在提交前遇到登录页。请在保留的独立Chrome中手动登录，完成后明确重试原素材；不要重复生成。')
                 failure=BASE/'output'/job['id']/'failure.png'
                 if failure.is_file():
                     st.caption('失败页面截图仅保存在本机，可能包含个人信息；请先遮挡隐私再分享。')
