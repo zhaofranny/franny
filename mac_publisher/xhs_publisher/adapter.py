@@ -126,17 +126,48 @@ class BrowserAdapter:
     el=visible_one(self.page,self.selectors[key])
     if not el: raise PublishError('UI_CHANGED_'+key.upper(),'未找到唯一可见的'+key+'控件，请适配页面选择器；尚未提交')
     return el
+ def upload_files(self,files):
+    deadline=time.monotonic()+min(self.timeout,15)
+    paths=[str(p) for p in files]
+    while True:
+        self.guard()
+        # The visible button selects its actual input, even when old/hidden inputs coexist.
+        buttons=[x for x in self.page.get_by_text('上传图片',exact=True).all() if x.is_visible()]
+        if len(buttons)==1:
+            try:
+                with self.page.expect_file_chooser(timeout=5000) as event:
+                    buttons[0].click(timeout=5000)
+                chooser=event.value
+                if len(files)>1 and not chooser.is_multiple():
+                    raise PublishError('UPLOAD_MULTIPLE_UNSUPPORTED','当前图片选择框不支持多图，本次未上传或提交')
+                accept=(chooser.element.get_attribute('accept') or '').lower()
+                if accept and not any(t in accept for t in ['image','.png','.jpg','.jpeg','.webp','*/*']):
+                    raise PublishError('UPLOAD_WRONG_TYPE','按钮对应的文件框不接受图片，本次未上传或提交')
+                chooser.set_files(paths)
+                return
+            except PublishError: raise
+            except Exception:
+                raise PublishError('UPLOAD_CHOOSER_NOT_OPENED','点击上传图片后未取得文件选择事件，请保留页面检查；尚未提交') from None
+        # Older layouts expose a unique image input without a visible upload button.
+        for css in ['input[type="file"][accept*="image"]','input[type="file"][accept*=".png"]','input[type="file"][accept*=".jpg"]',*self.selectors['upload']]:
+            matches=self.page.locator(css)
+            if matches.count()!=1: continue
+            candidate=matches.first
+            accept=(candidate.get_attribute('accept') or '').lower()
+            if accept and not any(t in accept for t in ['image','.png','.jpg','.jpeg','.webp','*/*']): continue
+            if candidate.is_disabled(): continue
+            if len(files)>1 and candidate.get_attribute('multiple') is None: continue
+            candidate.set_input_files(paths)
+            return
+        if time.monotonic()>=deadline:
+            raise PublishError('UPLOAD_CONTROL_MISSING','等待后仍无法确认图片上传按钮或唯一图片文件框，尚未提交')
+        self.page.wait_for_timeout(250)
  def prepare(self,manifest,files):
     self.navigate(self.page,PUBLISH)
     tabs=self.page.get_by_text('上传图文',exact=True)
     for tab in tabs.all():
         if tab.is_visible(): tab.click(timeout=5000);break
-    upload=None
-    for css in self.selectors['upload']:
-        matches=self.page.locator(css)
-        if matches.count()==1: upload=matches.first;break
-    if not upload: raise PublishError('UPLOAD_CONTROL_MISSING','未找到唯一图片上传框，尚未提交')
-    upload.set_input_files([str(p) for p in files])
+    self.upload_files(files)
     deadline=time.monotonic()+self.timeout
     while time.monotonic()<deadline:
         self.guard()

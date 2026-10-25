@@ -58,3 +58,32 @@ def test_missing_account_is_distinct_from_mismatch(context):
     adapter=BrowserAdapter(context);adapter.page.set_content('<body><div>首页</div></body>')
     with pytest.raises(PublishError) as exc: adapter.verify_account('ins审美搬运小工',timeout=0)
     assert exc.value.code=='ACCOUNT_NAME_UNREADABLE'
+
+
+def test_visible_upload_button_selects_correct_hidden_input(context,tmp_path):
+    adapter=BrowserAdapter(context,timeout=2)
+    adapter.page.set_content('''<body><input id="old" type="file" accept="image/png" hidden multiple><input id="video" type="file" accept="video/*" hidden><button onclick="document.getElementById('real').click()">上传图片</button><input id="real" type="file" accept=".jpg,.png,.webp" hidden multiple></body>''')
+    paths=[]
+    for i in range(4):
+        path=tmp_path/f'{i}.png';Image.new('RGB',(20,20),(i*40,0,0)).save(path);paths.append(path)
+    adapter.upload_files(paths)
+    assert adapter.page.locator('#real').evaluate('(el)=>el.files.length')==4
+    assert adapter.page.locator('#old').evaluate('(el)=>el.files.length')==0
+    assert adapter.page.locator('#video').evaluate('(el)=>el.files.length')==0
+    assert adapter.submits==0
+
+
+def test_delayed_extension_only_input(context,tmp_path):
+    adapter=BrowserAdapter(context,timeout=2)
+    adapter.page.set_content('''<body><script>setTimeout(()=>{const el=document.createElement('input');el.type='file';el.accept='.jpg,.png';el.multiple=true;document.body.appendChild(el)},300)</script></body>''')
+    path=tmp_path/'a.png';Image.new('RGB',(20,20),'green').save(path)
+    adapter.upload_files([path])
+    assert adapter.page.locator('input').evaluate('(el)=>el.files.length')==1
+
+
+def test_ambiguous_inputs_without_button_stop(context,tmp_path):
+    adapter=BrowserAdapter(context,timeout=.1)
+    adapter.page.set_content('<body><input type="file" accept="image/*"><input type="file" accept="image/*"></body>')
+    with pytest.raises(PublishError) as exc: adapter.upload_files([tmp_path/'unused.png'])
+    assert exc.value.code=='UPLOAD_CONTROL_MISSING'
+    assert adapter.submits==0

@@ -86,6 +86,19 @@ with material:
     if st.session_state.get('generated_titles'):
         st.success('文案与4张图卡已保存到本机并填入下方编辑器。核对内容后点击生成本地预览，再确认发布。')
         for candidate in st.session_state['generated_titles']: st.write('备选标题：'+candidate)
+    with st.expander('恢复本机已有素材（无需重新生成）'):
+        saved=sorted((LOCAL/'bundles').glob('*/manifest.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:50]
+        if saved:
+            chosen=st.selectbox('已保存素材，最新在前',saved,format_func=lambda p:p.parent.name,key='saved_bundle')
+            if st.button('恢复所选素材'):
+                try:
+                    m,files,_=load_bundle(chosen.parent)
+                    st.session_state['imported']={'title':m.title,'body':m.body,'tags':' '.join(m.tags),'images':[str(p) for p in files]}
+                    st.session_state['editor_key']=uuid.uuid4().hex
+                    st.session_state.pop('preview',None)
+                    st.rerun()
+                except (BundleError,ValueError): st.error('所选素材不完整或未通过校验，请选择其他记录')
+        else: st.caption('暂无已保存素材')
     st.write('导入现有Franny导出的待审核ZIP（必须含真实图片），或自行输入标题、正文和原创图片。默认不会发布。')
     zipped=st.file_uploader('导入素材 ZIP',type=['zip'],key='bundle_zip')
     if zipped and st.button('读取素材包'):

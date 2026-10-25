@@ -24,3 +24,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.4 focus and UI status
 26 targeted non-browser tests pass including active-session login click -> focus handoff without launching a duplicate process, focus requests cannot publish, and no contradictory starting status. macOS osascript activation cannot be verified on Linux; prior v0.2.3 offline-browser account tests unchanged.
+
+## v0.2.5 upload chooser
+34 tests pass, including 8 real offline Chromium cases. New cases verify visible button chooses correct one among multiple hidden image/video inputs; delayed extension-only input works; ambiguous inputs stop without submit. After adding saved-material restore UI, 26 non-browser tests pass. No live Xiaohongshu upload or publication verified.
