@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "os": "Linux",
+  "mac_verified": false,
+  "python": "3.12.14",
+  "python_supported": true,
+  "bundled_chromium_installed": false,
+  "system_chromium_for_tests": true,
+  "browser_profile_present": false,
+  "network_policy": "managed_environment_does_not_allow_creator.xiaohongshu.com",
+  "live_publication_tested": false,
+  "message": "当前检查只覆盖运行它的机器；Linux结果不能当作用户Mac的检查。"
+}
