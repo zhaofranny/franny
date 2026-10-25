@@ -62,6 +62,9 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
         message=str(exc) if known else '浏览器或本地存储操作异常；不公开原始异常与会话信息'
         state='unknown' if submitted else ('blocked' if code in {'LOGIN_REQUIRED','LOGIN_OR_VERIFICATION','PLATFORM_VERIFICATION','ACCOUNT_NOT_VERIFIED','ACCOUNT_MISMATCH','ACCOUNT_NAME_UNREADABLE'} else 'failed_pre_submit')
         diagnostic={'stage':stage,'error_type':type(exc).__name__ if type(exc).__module__ in {'builtins','playwright._impl._errors'} else 'PublishError'}
+        try:
+            if hasattr(adapter,'diagnostics'): diagnostic.update(adapter.diagnostics())
+        except Exception: diagnostic['page_diagnostics_unavailable']=True
         if artifact_dir:
             try:
                 artifact_dir=Path(artifact_dir);artifact_dir.mkdir(parents=True,exist_ok=True)

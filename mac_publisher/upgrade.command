@@ -11,6 +11,7 @@ fi
 if [[ "$SOURCE" != "$TARGET" ]]; then
   cp "$SOURCE/publisher_app.py" "$TARGET/publisher_app.py"
   cp "$SOURCE/start.command" "$TARGET/start.command"
+  cp "$SOURCE/stop_idle_browser.py" "$TARGET/stop_idle_browser.py"
   cp "$SOURCE/configure_model.command" "$TARGET/configure_model.command"
   chmod +x "$TARGET/configure_model.command"
   cp "$SOURCE/README.md" "$TARGET/README.md"

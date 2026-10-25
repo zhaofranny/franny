@@ -122,3 +122,29 @@ def test_authenticated_page_is_not_reloaded(context):
     adapter.page.evaluate("document.body.dataset.kept='yes'")
     adapter.open()
     assert adapter.page.locator('body').get_attribute('data-kept')=='yes'
+
+
+def test_existing_authenticated_tab_is_reused_with_session_storage(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<body><div class="user-name">测试账号</div><button onclick="document.body.innerHTML=\'暂无笔记\'">笔记管理</button></body>',content_type='text/html; charset=utf-8'))
+    existing=context.new_page();existing.goto('https://creator.xiaohongshu.com/')
+    existing.evaluate("sessionStorage.setItem('synthetic_auth','tab-only')")
+    adapter=BrowserAdapter(context)
+    assert adapter.page is existing and len(context.pages)==1
+    assert adapter.baseline().verified
+    assert not existing.is_closed() and len(context.pages)==1
+    assert existing.evaluate("sessionStorage.getItem('synthetic_auth')")=='tab-only'
+
+
+def test_multiple_creator_tabs_cannot_be_guessed(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<body>首页</body>',content_type='text/html; charset=utf-8'))
+    for _ in range(2):context.new_page().goto('https://creator.xiaohongshu.com/')
+    with pytest.raises(PublishError) as exc:BrowserAdapter(context)
+    assert exc.value.code=='AMBIGUOUS_BROWSER_TABS'
+
+
+def test_page_diagnostics_never_include_url_query_or_fragment(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<body>首页</body>',content_type='text/html; charset=utf-8'))
+    page=context.new_page();page.goto('https://creator.xiaohongshu.com/login?secret=private#token')
+    diagnostic=BrowserAdapter(context).diagnostics()
+    assert diagnostic['controlled_path']=='/login'
+    assert 'private' not in str(diagnostic) and 'token' not in str(diagnostic)

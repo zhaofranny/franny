@@ -30,3 +30,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.6 page readiness and upgrade lifecycle
 41 tests pass, including 12 offline real Chromium tests and 3 upgrade helper tests. New browser cases cover blank login route classified as render timeout, delayed route transition to authenticated dashboard, actual visible login form blocked, authenticated page not reloaded. Upgrade helper only targets exact project login workers and refuses publication workers. Existing delayed upload tests pass after readiness polling correction. No live Xiaohongshu or Mac end-to-end verification performed.
+
+## v0.2.7 same-tab account continuity
+44 tests pass, including 15 offline Chromium cases. New cases verify existing creator tab reused without creating or closing tabs, tab-scoped sessionStorage survives baseline inspection, multiple creator tabs stop rather than guess, diagnostics omit URL query/fragment. No live Mac/Xiaohongshu publication verified.

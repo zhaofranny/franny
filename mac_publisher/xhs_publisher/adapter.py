@@ -28,7 +28,13 @@ def visible_one(root,selectors):
 class BrowserAdapter:
  def __init__(self,context,selectors=None,timeout=45):
     self.context=context;self.selectors=selectors or DEFAULTS;self.timeout=timeout
-    self.page=context.new_page();self.submits=0
+    existing=[p for p in context.pages if not p.is_closed() and urlsplit(p.url).hostname=='creator.xiaohongshu.com']
+    authenticated_routes=[p for p in existing if 'login' not in urlsplit(p.url).path.lower()]
+    candidates=authenticated_routes or existing
+    if len(candidates)>1:
+        raise PublishError('AMBIGUOUS_BROWSER_TABS','存在多个创作者平台标签页，请只保留你已登录的一个标签页后重试；未提交')
+    self.page=candidates[0] if candidates else context.new_page()
+    self.submits=0
  def navigate(self,page,url):
     if urlsplit(url).hostname!='creator.xiaohongshu.com': raise PublishError('HOST_DENIED','只操作小红书官方创作者平台')
     response=page.goto(url,wait_until='domcontentloaded',timeout=30000)
@@ -104,9 +110,9 @@ class BrowserAdapter:
             if exc.code not in {'PAGE_NOT_READY','LOGIN_REQUIRED','LOGIN_OR_VERIFICATION'}: raise
     self.navigate(self.page,HOME)
  def _manager(self):
-    page=self.context.new_page()
+    page=self.page
     try:
-        self.navigate(page,HOME)
+        self.open()
         link=None
         for label in ['笔记管理','内容管理','作品管理']:
             matches=page.get_by_text(label,exact=True)
@@ -117,7 +123,7 @@ class BrowserAdapter:
         link.click(timeout=5000);page.wait_for_timeout(1500);self.guard(page)
         return page,True
     except Exception:
-        page.close();raise
+        raise
  def _records(self,page):
     for css in self.selectors['cards']:
         cards=[x for x in page.locator(css).all() if x.is_visible()]
@@ -144,7 +150,7 @@ class BrowserAdapter:
         if not found: return Baseline()
         records,verified=self._records(page)
         return Baseline(verified,{x['id'] for x in records})
-    finally: page.close()
+    finally: pass
  def _editor(self,key):
     el=visible_one(self.page,self.selectors[key])
     if not el: raise PublishError('UI_CHANGED_'+key.upper(),'未找到唯一可见的'+key+'控件，请适配页面选择器；尚未提交')
@@ -292,6 +298,9 @@ class BrowserAdapter:
             elif status=='已发布': state='published'
             else: continue
             return {'state':state,'note_id':record['id'],'note_url':'https://www.xiaohongshu.com/explore/'+record['id'],'platform_status':status}
-        finally: page.close()
+        finally: pass
     return {'state':'submitted_unverified','message':'已执行一次提交，但没有取得新笔记ID及明确状态；请到创作者平台核对，禁止自动重发'}
+ def diagnostics(self):
+    parsed=urlsplit(self.page.url)
+    return {'controlled_origin':parsed.scheme+'://'+parsed.netloc,'controlled_path':parsed.path,'open_page_count':len(self.context.pages),'page_closed':self.page.is_closed(),'document_state':self.page.evaluate('document.readyState')}
  def screenshot(self,path): self.page.screenshot(path=str(path),full_page=True)
