@@ -87,3 +87,38 @@ def test_ambiguous_inputs_without_button_stop(context,tmp_path):
     with pytest.raises(PublishError) as exc: adapter.upload_files([tmp_path/'unused.png'])
     assert exc.value.code=='UPLOAD_CONTROL_MISSING'
     assert adapter.submits==0
+
+
+def test_blank_login_route_is_not_authentication_failure(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<html><body></body></html>',content_type='text/html; charset=utf-8'))
+    adapter=BrowserAdapter(context,timeout=.2)
+    with pytest.raises(PublishError) as exc:adapter.navigate(adapter.page,'https://creator.xiaohongshu.com/login')
+    assert exc.value.code=='PAGE_RENDER_TIMEOUT'
+    with pytest.raises(PublishError) as exc:adapter.guard()
+    assert exc.value.code=='PAGE_NOT_READY'
+    assert adapter.submits==0
+
+
+def test_waits_for_blank_login_route_to_render_dashboard(context):
+    html='''<body><script>setTimeout(()=>{history.replaceState({},'', '/');document.body.innerHTML='<div class="user-name">测试账号</div><nav>首页 笔记管理</nav>'},350)</script></body>'''
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body=html,content_type='text/html; charset=utf-8'))
+    adapter=BrowserAdapter(context,timeout=2)
+    adapter.navigate(adapter.page,'https://creator.xiaohongshu.com/login')
+    assert adapter.current_account()=='测试账号'
+    assert adapter.submits==0
+
+
+def test_real_visible_login_form_is_still_blocked(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<body>手机号登录<button>登录</button></body>',content_type='text/html; charset=utf-8'))
+    adapter=BrowserAdapter(context,timeout=2)
+    with pytest.raises(PublishError) as exc:adapter.navigate(adapter.page,'https://creator.xiaohongshu.com/login')
+    assert exc.value.code=='LOGIN_REQUIRED'
+
+
+def test_authenticated_page_is_not_reloaded(context):
+    context.route('https://creator.xiaohongshu.com/**',lambda route:route.fulfill(body='<body><div class="user-name">测试账号</div><nav>首页 笔记管理</nav></body>',content_type='text/html; charset=utf-8'))
+    adapter=BrowserAdapter(context)
+    adapter.page.goto('https://creator.xiaohongshu.com/')
+    adapter.page.evaluate("document.body.dataset.kept='yes'")
+    adapter.open()
+    assert adapter.page.locator('body').get_attribute('data-kept')=='yes'

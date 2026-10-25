@@ -33,11 +33,27 @@ class BrowserAdapter:
     if urlsplit(url).hostname!='creator.xiaohongshu.com': raise PublishError('HOST_DENIED','只操作小红书官方创作者平台')
     response=page.goto(url,wait_until='domcontentloaded',timeout=30000)
     if response and response.status>=400: raise PublishError('PLATFORM_HTTP_DENIED','创作者平台返回访问错误，已停止')
-    page.wait_for_timeout(1000);self.guard(page)
+    try:
+        page.wait_for_function(r"""() => {
+          const text=(document.body?.innerText||'').trim();
+          if (!text) return false;
+          if (!location.pathname.toLowerCase().includes('login')) return true;
+          return /扫码登录|手机号登录|验证码登录|短信登录|手机号码|获取验证码|请登录|登录\/注册/.test(text)
+            || [...document.querySelectorAll('button')].some(el=>el.getBoundingClientRect().width>0 && el.innerText.trim()==='登录');
+        }""",timeout=min(self.timeout,20)*1000)
+    except Exception:
+        raise PublishError('PAGE_RENDER_TIMEOUT','官方页面未能完成渲染或登录跳转，不能判定登录失效；请保留页面检查网络和加载情况，尚未提交') from None
+    self.guard(page)
  def guard(self,page=None):
     page=page or self.page
-    if 'login' in urlsplit(page.url).path.lower(): raise PublishError('LOGIN_REQUIRED','登录已失效，请先手动登录')
     text=page.locator('body').inner_text(timeout=5000)
+    if not text.strip() and page.locator('input[type="file"]').count()==0: raise PublishError('PAGE_NOT_READY','官方页面仍为空白，尚未完成渲染，不能确认登录状态；尚未提交')
+    if 'login' in urlsplit(page.url).path.lower():
+        visible_login=bool(re.search(r'扫码登录|手机号登录|验证码登录|短信登录|手机号码|获取验证码|请登录|登录/注册',text))
+        if not visible_login:
+            visible_login=any(el.is_visible() for el in page.get_by_role('button',name='登录',exact=True).all())
+        if visible_login: raise PublishError('LOGIN_REQUIRED','官方页面显示登录控件，请在当前独立浏览器中手动登录；尚未提交')
+        raise PublishError('PAGE_NOT_READY','页面仍在登录路由，但没有可见登录控件，不能判定会话失效；尚未提交')
     if any(x in text for x in ['请完成安全验证','访问频繁','操作频繁','异常访问','安全验证']):
         raise PublishError('PLATFORM_VERIFICATION','遇到平台验证或风控，已暂停；请自行检查官方页面，不自动处理验证码')
     for css in ['.login-modal','.login-container','.captcha-container']:
@@ -79,7 +95,14 @@ class BrowserAdapter:
     if observed:
         raise PublishError('ACCOUNT_MISMATCH','页面识别到的账号与绑定账号不同，尚未提交；请核对右上角账号')
     raise PublishError('ACCOUNT_NAME_UNREADABLE','已打开官方页面，但15秒内未能唯一识别账号名称；请保留页面以适配，尚未提交')
- def open(self): self.navigate(self.page,HOME)
+ def open(self):
+    # Reuse the already authenticated live page instead of forcing another redirect.
+    if urlsplit(self.page.url).hostname=='creator.xiaohongshu.com':
+        try:
+            if self.current_account(): return
+        except PublishError as exc:
+            if exc.code not in {'PAGE_NOT_READY','LOGIN_REQUIRED','LOGIN_OR_VERIFICATION'}: raise
+    self.navigate(self.page,HOME)
  def _manager(self):
     page=self.context.new_page()
     try:
@@ -130,7 +153,11 @@ class BrowserAdapter:
     deadline=time.monotonic()+min(self.timeout,15)
     paths=[str(p) for p in files]
     while True:
-        self.guard()
+        try: self.guard()
+        except PublishError as exc:
+            if exc.code!='PAGE_NOT_READY' or time.monotonic()>=deadline: raise
+            self.page.wait_for_timeout(250)
+            continue
         # The visible button selects its actual input, even when old/hidden inputs coexist.
         buttons=[x for x in self.page.get_by_text('上传图片',exact=True).all() if x.is_visible()]
         if len(buttons)==1:

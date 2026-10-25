@@ -27,3 +27,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.5 upload chooser
 34 tests pass, including 8 real offline Chromium cases. New cases verify visible button chooses correct one among multiple hidden image/video inputs; delayed extension-only input works; ambiguous inputs stop without submit. After adding saved-material restore UI, 26 non-browser tests pass. No live Xiaohongshu upload or publication verified.
+
+## v0.2.6 page readiness and upgrade lifecycle
+41 tests pass, including 12 offline real Chromium tests and 3 upgrade helper tests. New browser cases cover blank login route classified as render timeout, delayed route transition to authenticated dashboard, actual visible login form blocked, authenticated page not reloaded. Upgrade helper only targets exact project login workers and refuses publication workers. Existing delayed upload tests pass after readiness polling correction. No live Xiaohongshu or Mac end-to-end verification performed.

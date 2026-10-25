@@ -7,6 +7,7 @@ if [[ ! -d "$TARGET/.venv" ]]; then
   read -r -p '按回车退出' _done
   exit 1
 fi
+"$TARGET/.venv/bin/python" "$SOURCE/stop_idle_browser.py" --base "$TARGET"
 if [[ "$SOURCE" != "$TARGET" ]]; then
   cp "$SOURCE/publisher_app.py" "$TARGET/publisher_app.py"
   cp "$SOURCE/start.command" "$TARGET/start.command"
