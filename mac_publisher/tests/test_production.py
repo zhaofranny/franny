@@ -103,3 +103,30 @@ def test_fabricated_browsing_experience_rejected_without_sources(monkeypatch):
         def read(self,*args):return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(d)}}]}).encode()
     monkeypatch.setattr('urllib.request.urlopen',lambda *a,**k:Response())
     with pytest.raises(ProductionError,match='虚构'):generate('晚餐讨论','DeepSeek',{'DEEPSEEK_API_KEY':'test-key'})
+
+
+def test_reference_excerpt_is_not_copied_into_original(monkeypatch):
+    d=data()
+    class Response:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,*args):return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(d)}}]}).encode()
+    monkeypatch.setattr('urllib.request.urlopen',lambda *a,**k:Response())
+    with pytest.raises(ProductionError,match='重合'):generate('晚餐话题','DeepSeek',{'DEEPSEEK_API_KEY':'test-key'},reference_notes=d['body'])
+
+
+def test_reference_body_is_not_author_diary(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen',lambda *a,**k:pytest.fail('Must not fabricate a diary'))
+    with pytest.raises(ProductionError,match='真实记录'):generate('日记','DeepSeek',{},'真实记录日记','【公开参考，不是本人记录】别人自己的减脂经历')
+
+
+def test_cover_has_yellow_highlight_blue_keyword_and_white_margin(tmp_path):
+    from PIL import Image
+    d=data();d['cover']='发现了一个\n邪修减肥\n小习惯'
+    root=build_bundle(Draft(**d),tmp_path/'bundle')
+    with Image.open(root/'images/01.png') as image:
+        assert image.getpixel((540,100))==(255,255,255)
+        colors=image.getcolors(image.width*image.height)
+        assert any(r>220 and g>180 and b<130 for _,(r,g,b) in colors)
+        assert any(b>150 and r<100 and g<160 for _,(r,g,b) in colors)
+    assert json.loads((root/'editorial.json').read_text())['design']=='reference_handwriting_yellow_highlight_blue_keyword'

@@ -165,3 +165,23 @@ def test_matching_onboarding_tip_closes_without_removing_ui(context):
     assert not adapter.page.get_by_role('dialog').is_visible()
     assert adapter.page.get_by_role('button',name='发布',exact=True).is_visible()
     assert adapter.submits==0
+
+
+def test_read_public_visible_note_preserves_missing_values_and_provenance(context,tmp_path):
+    from xhs_publisher.research import collect
+    from types import SimpleNamespace
+    import json
+    url='https://www.xiaohongshu.com/explore/'+'b'*24+'?xsec_token=test-local-only'
+    html='''<body><div id="detail-title">合成测试：晚餐话题</div><div id="detail-desc">这是离线测试页面的原创占位内容，不代表真实站点采集结果。</div><div class="author-container"><span class="username">合成账号</span></div><div class="like-wrapper"><span class="count">1.4万</span></div><div class="collect-wrapper"><span class="count">收藏</span></div><div class="comments-container"><div class="comment-item"><div class="content">晚饭主食怎么选？</div></div></div></body>'''
+    context.route('https://www.xiaohongshu.com/**',lambda route:route.fulfill(body=html,content_type='text/html; charset=utf-8'))
+    class WrappedContext:
+        request=SimpleNamespace(get=lambda *a,**k:SimpleNamespace(status=200,text=lambda:'User-agent: *\nAllow: /'))
+        @property
+        def pages(self):return context.pages
+        def new_page(self):return context.new_page()
+    report=collect(WrappedContext(),tmp_path,urls=[url],limit=1,permitted=True)
+    assert report['state']=='completed' and report['collected']==1
+    data=json.loads(__import__('pathlib').Path(report['files'][0]).read_text())
+    assert data['likes']==14000 and data['saves'] is None and data['published_at'] is None
+    assert data['source_url']==url and data['comment_samples']==['晚饭主食怎么选？']
+    assert 'saves' in data['missing_fields']

@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field, ConfigDict
 from .bundle import Manifest, load_bundle, BundleError
 from .journal import atomic_json
+from .hand_cover import render_cover
 
 class ProductionError(ValueError): pass
 
@@ -77,7 +78,7 @@ def validate_draft(data):
 def generate(topic,provider,config,direction="邪修减肥",reference_notes=""):
     if direction not in DIRECTIONS: raise ProductionError("请选择内容方向")
     if len(reference_notes)>2000: raise ProductionError("参考摘要最多2000字")
-    if direction=="真实记录日记" and not reference_notes.strip(): raise ProductionError("日记方向需要你的真实记录，不能编造亲测")
+    if direction=="真实记录日记" and (not reference_notes.strip() or "【公开参考，不是本人记录" in reference_notes): raise ProductionError("日记方向需要你的真实记录，不能编造亲测")
     if provider not in SPECS: raise ProductionError('请选择受支持的模型服务')
     if not 2<=len(topic.strip())<=300: raise ProductionError('选题请填写2–300字')
     keyname,modelname,default,url=SPECS[provider]
@@ -91,7 +92,7 @@ def generate(topic,provider,config,direction="邪修减肥",reference_notes=""):
 标题3个分别用反问/反差、具体生活场景、轻吐槽或经验征集。避免三条同义改写和套话；允许“不是？、谁懂、姐妹们”等自然网感，不夸大流量。
 结构：一句具体矛盾/问题开场→2–3个可讨论的场景或选择→一句简短事实边界→一个能回答的互动问题。不要写教科书式科普，也不空喊自律。
 参考摘要是用户提供、尚未独立核实的材料，只借鉴主题与结构，不逐句改写或拼接，不把偏方报告当科学结论。无摘要时禁止“我刷到一群人、评论区都说、有人反馈”等伪造来源；无本人真实记录时禁止“我以前也这样、我试过、我瘦了”等虚构经历。不可把给出的互动数字当成已核验数据。
-封面只写一个悬念，不写效果承诺；用2–4个完整短语分行，使用JSON换行符，避免拆开主食、减肥等完整词；正文必须回答封面问题。不要说已经检索、核实、实测或保证爆款。"""
+先写正文，再从正文中心观点提炼封面。封面只写一个与正文一致的悬念，不写效果承诺；必须用3个完整短语分行，每行最多6个字，使用JSON换行符，避免拆开主食、减肥等完整词；正文必须回答封面问题。不要说已经检索、核实、实测或保证爆款。"""
     safe_notes=re.sub(r'https?://\S+','[参考链接仅本机保存]',reference_notes)
     payload={'model':config.get(modelname) or default,'messages':[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'topic':topic,'direction':direction,'user_supplied_reference_summary':safe_notes},ensure_ascii=False)}],'response_format':{'type':'json_object'},'max_tokens':1800}
     req=urllib.request.Request(url,json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
@@ -104,6 +105,12 @@ def generate(topic,provider,config,direction="邪修减肥",reference_notes=""):
         combined=' '.join([*draft.titles,draft.body,*draft.cards])
         if not reference_notes.strip() and re.search(r'刷到|我以前|我曾经|我之前|我试过|评论区.{0,6}(?:有人说|都说|反馈)',combined):
             raise ProductionError('生成内容虚构了来源或个人经历，未进入发布队列')
+        if reference_notes.strip():
+            from difflib import SequenceMatcher
+            source=re.sub(r'\s+','',safe_notes)
+            for text in [draft.body,*draft.cards]:
+                if SequenceMatcher(None,source,re.sub(r'\s+','',text),autojunk=False).find_longest_match().size>=28:
+                    raise ProductionError('生成文案与参考片段连续重合过多，未进入发布队列；请重新组织观点')
         return draft
     except urllib.error.HTTPError as exc:
         messages={401:'API密钥无效或权限不足',402:'API余额不足',429:'API限流或额度不足，请检查官方控制台，未自动重试'}
@@ -132,7 +139,12 @@ def build_bundle(draft,root,title_index=0,source_links=(),direction="邪修减�
     if title_index not in range(3): raise ProductionError('标题选择无效')
     root=Path(root);(root/'images').mkdir(parents=True,exist_ok=False)
     font=font_path();images=[]
+    cover_font_used=''
     for i,text in enumerate([draft.cover,*draft.cards]):
+        if i==0:
+            image,cover_font_used=render_cover(text,font)
+            relative='images/01.png';image.save(root/relative);images.append(relative)
+            continue
         image=Image.new('RGB',(1080,1440),'#FFFFFF');draw=ImageDraw.Draw(image)
         size=192 if i==0 else 68
         while True:
@@ -162,6 +174,6 @@ def build_bundle(draft,root,title_index=0,source_links=(),direction="邪修减�
     manifest=Manifest(title=draft.titles[title_index],body=draft.body,tags=draft.tags,images=images,ai_generated=True,original_content=True)
     atomic_json(root/'manifest.json',manifest.model_dump())
     atomic_json(root/'draft.json',draft.model_dump())
-    atomic_json(root/'editorial.json',{'direction':direction,'source_links':links,'source_status':'user_supplied_not_independently_verified','design':'pure_white_large_black_cover_no_frame_or_footer'})
+    atomic_json(root/'editorial.json',{'direction':direction,'source_links':links,'source_status':'user_supplied_not_independently_verified','design':'reference_handwriting_yellow_highlight_blue_keyword','cover_font':cover_font_used})
     load_bundle(root)
     return root

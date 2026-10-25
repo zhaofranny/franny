@@ -10,7 +10,8 @@ class SessionUnavailable(ValueError): pass
 def session_state(local):
     try:
         state=json.loads((Path(local)/'browser_session.json').read_text())
-        if time.time()-state['heartbeat']>8 or state['heartbeat']>time.time()+2: return {}
+        max_age=3600 if state.get('state')=='busy' else 8
+        if time.time()-state['heartbeat']>max_age or state['heartbeat']>time.time()+2: return {}
         os.kill(int(state['pid']),0)
         return state
     except (OSError,ValueError,KeyError,TypeError): return {}
@@ -21,6 +22,14 @@ def enqueue(local,bundle,approved_hash,job_id,retry=False):
         raise SessionUnavailable('独立浏览器尚未就绪或正在执行任务。请到①登录并保持该窗口打开，不必重新生成素材。')
     request={'session':state['session'],'bundle':str(Path(bundle).resolve()),'approved_hash':approved_hash,'job_id':job_id,'retry':retry}
     atomic_json(Path(local)/'requests'/(state['session']+'-'+job_id+'.json'),request)
+    return state['pid']
+
+def enqueue_research(local,keyword,urls,limit,permitted):
+    import uuid
+    state=session_state(local)
+    if state.get('state')!='ready':raise SessionUnavailable('请先打开①的实时浏览器，且等待当前任务完成')
+    atomic_json(Path(local)/'research_status.json',{'state':'queued','message':'真实参考读取已排队，未生成任何模拟数据','collected':0})
+    atomic_json(Path(local)/'requests'/(state['session']+'-research'+uuid.uuid4().hex+'.json'),{'session':state['session'],'action':'research','keyword':keyword,'urls':urls,'limit':limit,'permitted':permitted})
     return state['pid']
 
 def request_focus(local):
@@ -69,6 +78,11 @@ def run_session(adapter,journal,base,account):
                             atomic_json(local/'login_status.json',{'state':'logged_in','message':'已请求将现有小红书窗口切到前台，不会重复启动浏览器'})
                         except Exception:
                             atomic_json(local/'login_status.json',{'state':'focus_failed','message':'窗口仍在运行，但未能切到前台；请按Control+上箭头，选择小红书创作服务平台窗口'})
+                        continue
+                    if request.get('action')=='research':
+                        status('busy')
+                        from .research import collect
+                        collect(adapter.context,base,keyword=request.get('keyword','减肥邪修'),urls=request.get('urls'),limit=request.get('limit',5),permitted=request.get('permitted',False))
                         continue
                     job=journal.get(request.get('job_id',''))
                     if not job or job['state']!='preparing' or job['account']!=account: continue

@@ -96,3 +96,19 @@ def test_ui_existing_session_login_click_requests_focus(monkeypatch):
     assert not app.exception
     assert requests==['focus']
     assert not any('正在启动独立浏览器' in message.value for message in app.info)
+
+
+def test_research_queues_real_read_only_request(tmp_path):
+    from xhs_publisher.session import enqueue_research
+    import json
+    atomic_json(tmp_path/'browser_session.json',{'session':'live','pid':os.getpid(),'state':'ready','heartbeat':time.time()})
+    enqueue_research(tmp_path,'减肥邪修',[],5,True)
+    report=json.loads((tmp_path/'research_status.json').read_text())
+    request=json.loads(next((tmp_path/'requests').glob('*.json')).read_text())
+    assert report['collected']==0 and report['state']=='queued'
+    assert request['action']=='research' and 'job_id' not in request
+
+
+def test_active_busy_worker_is_not_mistaken_for_missing_session(tmp_path):
+    atomic_json(tmp_path/'browser_session.json',{'session':'live','pid':os.getpid(),'state':'busy','heartbeat':time.time()-30})
+    assert session_state(tmp_path)['state']=='busy'

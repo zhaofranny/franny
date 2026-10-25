@@ -39,3 +39,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.3.1 cover design
 11 production tests pass. Generated preview inspected: pure white background, large black text, no border/header/footer; explicit phrase line breaks preserved by reducing font size to fit. No paid API call or publication performed for this styling change.
+
+## v0.4.0 reference reader and contextual cover
+66 tests passed, including 18 real offline Chromium tests. New coverage: normal visible-DOM extraction with missing saves/date preserved; raw share URL retained only locally; permission/robots failure produces zero synthetic successes; relative interaction ranking; missing body cannot become reference; reference excerpt overlap blocked; other people's record cannot become author's diary; local highlighter/blue-keyword cover; reader request cannot publish; long busy worker is not mistaken for a missing session. No live Xiaohongshu access: cloud network policy excludes that domain. No paid model call or actual posting verified.

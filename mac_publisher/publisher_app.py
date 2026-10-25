@@ -9,7 +9,8 @@ import streamlit as st
 from xhs_publisher import VERSION
 from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
 from xhs_publisher.journal import Journal,atomic_json
-from xhs_publisher.session import session_state,enqueue,request_focus,SessionUnavailable
+from xhs_publisher.session import session_state,enqueue,request_focus,enqueue_research,SessionUnavailable
+from xhs_publisher.research import rank,reference_summary,ResearchBlocked
 from xhs_publisher.production import SPECS,DIRECTIONS,source_links_valid,settings,generate,build_bundle,ProductionError
 
 BASE=Path(__file__).resolve().parent
@@ -71,10 +72,47 @@ with material:
     provider=st.selectbox('文案模型服务',list(SPECS))
     direction=st.selectbox('内容方向',list(DIRECTIONS))
     topic=st.text_input('今天的选题',DIRECTIONS[direction][0],max_chars=300,key='topic_'+direction)
-    with st.expander('参考笔记与真实记录（选填）'):
-        reference_notes=st.text_area('参考主题、评论区问题摘要或自己的真实记录',max_chars=2000,help='只提供合法使用的简短摘要，不粘贴他人整篇正文。此摘要会发送给所选模型；没有摘要时生成讨论问题，不编造检索或评论经历。')
-        source_text=st.text_area('参考原帖链接，每行一条，最多10条',help='仅随素材保存在本机，不发送给模型，不自动采集，不代表已经核验原帖。')
-    st.caption('当前未接入真实站内检索或9张截图自动识别；这里选择的是按你描述整理的内容方向。日记方向需填本人真实记录。')
+    with st.expander('读取真实参考笔记 → 用于原创生成'):
+        keyword=st.selectbox('参考检索词',['减肥邪修','掉秤','晚餐碳水','减肥冷知识','消水肿','评论区减肥经验'])
+        research_urls=st.text_area('优先读取指定原帖链接，每行一条；留空则检索关键词',help='请填写浏览器展开后的完整笔记链接。只读取正常可见页面；缺失正文/互动数据不编造。')
+        limit=st.number_input('最多读取条数',min_value=1,max_value=30,value=5,step=1)
+        research_permitted=st.checkbox('我确认平台允许本次自动化读取，并有权使用这些参考数据')
+        if st.button('读取真实参考笔记',disabled=not research_permitted):
+            try:
+                enqueue_research(LOCAL,keyword,[line.strip() for line in research_urls.splitlines() if line.strip()],int(limit),research_permitted)
+                st.info('已交给Mac实时浏览器读取，遇到限制会停止；不会请求私有接口。')
+            except SessionUnavailable as exc:st.error(str(exc))
+        @st.fragment(run_every=2)
+        def research_progress():
+            report=read_json(LOCAL/'research_status.json')
+            if report:
+                st.write(report.get('message',''))
+                st.caption('状态：'+report.get('state','未知')+' · 已取得真实笔记：'+str(report.get('collected',0)))
+        research_progress()
+        if st.button('刷新已读取参考'):st.rerun()
+        report=read_json(LOCAL/'research_status.json')
+        collected=[]
+        for filename in report.get('files',[]):
+            path=Path(filename).resolve()
+            if path.is_relative_to((LOCAL/'research').resolve()) and path.is_file():
+                record=read_json(path)
+                if record.get('origin')=='visible_dom' and record.get('body'):collected.append(record)
+        ranked=rank(collected)
+        if ranked:
+            st.caption('仅按本次样本的已观测互动量排序，不代表全站爆款榜；空白数据为未取得。')
+            st.dataframe([{'标题':r.get('title'),'点赞':r.get('likes'),'收藏':r.get('saves'),'评论':r.get('comments'),'采集时间':r.get('collected_at'),'原帖':r.get('url')} for r in ranked],hide_index=True)
+            chosen=st.multiselect('选择最多3条参考，用于正文与头图创作',list(range(len(ranked))),default=list(range(min(3,len(ranked)))),max_selections=3,format_func=lambda i:ranked[i].get('title') or ranked[i]['url'])
+            if st.button('将所选真实笔记用于生成'):
+                try:
+                    selected=[ranked[i] for i in chosen]
+                    st.session_state['reference_summary']=reference_summary(selected)
+                    st.session_state['reference_links']='\n'.join(r['source_url'] for r in selected)
+                    st.rerun()
+                except ResearchBlocked as exc:st.error(str(exc))
+    with st.expander('参考摘要与原帖链接（可核对或自行提供）'):
+        reference_notes=st.text_area('参考主题、评论区问题摘要或自己的真实记录',key='reference_summary',max_chars=2000,help='只提供合法使用的简短摘要，不粘贴他人整篇正文。此摘要会发送给所选模型；没有摘要时生成讨论问题，不编造检索或评论经历。')
+        source_text=st.text_area('参考原帖链接，每行一条，最多10条',key='reference_links',help='仅随素材保存在本机，不发送给模型，不自动采集，不代表已经核验原帖。')
+    st.caption('真实参考需先在上方读取成功；未读取到内容时不声称已检索爆款。日记方向需要本人记录。')
     st.caption('生成3个标题、150–300字正文、5个话题和4张原创文字图卡。密钥仅读取本机环境变量、Streamlit Secrets或.local/generation.json。规则检查不代替人工健康事实核查。')
     if st.button('一键生成文案和原创图卡',type='primary'):
         try:
