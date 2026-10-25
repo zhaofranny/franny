@@ -10,7 +10,7 @@ from xhs_publisher import VERSION
 from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
 from xhs_publisher.journal import Journal,atomic_json
 from xhs_publisher.session import session_state,enqueue,request_focus,SessionUnavailable
-from xhs_publisher.production import SPECS,settings,generate,build_bundle,ProductionError
+from xhs_publisher.production import SPECS,DIRECTIONS,source_links_valid,settings,generate,build_bundle,ProductionError
 
 BASE=Path(__file__).resolve().parent
 LOCAL=BASE/'.local';LOCAL.mkdir(exist_ok=True);LOCAL.chmod(0o700)
@@ -23,13 +23,16 @@ st.caption(f'v{VERSION} · 单账号 · 真实浏览器 · 不调用私有发布
 def start(action,*extra):
     if action=='publish':
         args=dict(zip(extra[::2],extra[1::2]))
-        return enqueue(LOCAL,args['--bundle'],args['--approved-hash'],args['--job-id'],'--retry-preparation' in extra)
+        active=session_state(LOCAL)
+        if active.get('state')=='ready':
+            return enqueue(LOCAL,args['--bundle'],args['--approved-hash'],args['--job-id'],'--retry-preparation' in extra)
+        if active.get('state')=='busy': raise SessionUnavailable('浏览器正在处理另一任务，请等待完成')
     active=session_state(LOCAL)
-    if active.get('state') in {'ready','busy'}:
+    if action=='login' and active.get('state') in {'ready','busy'}:
         pid=request_focus(LOCAL)
         atomic_json(LOCAL/'login_status.json',{'state':'focusing','message':'正在唤起已有小红书窗口，不会重复打开浏览器…'})
         return pid
-    atomic_json(LOCAL/'login_status.json',{'state':'starting','message':'正在启动独立浏览器…'})
+    if action=='login': atomic_json(LOCAL/'login_status.json',{'state':'starting','message':'正在启动独立浏览器…'})
     command=[sys.executable,'-m','xhs_publisher.worker',action,'--base',str(BASE),*extra]
     log=(LOCAL/'worker.log').open('a',encoding='utf-8')
     try: return subprocess.Popen(command,cwd=BASE,stdout=log,stderr=log,start_new_session=True).pid
@@ -66,15 +69,21 @@ with material:
     if st.button('刷新实时浏览器会话状态'): st.rerun()
     if session_state(LOCAL).get('state')!='ready': st.info('发布前请到①打开并登录独立Chrome，保持窗口打开；登录完成后点击刷新实时浏览器会话状态。')
     provider=st.selectbox('文案模型服务',list(SPECS))
-    topic=st.text_input('今天的选题','减脂人，别再和意志力硬刚了',max_chars=300)
+    direction=st.selectbox('内容方向',list(DIRECTIONS))
+    topic=st.text_input('今天的选题',DIRECTIONS[direction][0],max_chars=300,key='topic_'+direction)
+    with st.expander('参考笔记与真实记录（选填）'):
+        reference_notes=st.text_area('参考主题、评论区问题摘要或自己的真实记录',max_chars=2000,help='只提供合法使用的简短摘要，不粘贴他人整篇正文。此摘要会发送给所选模型；没有摘要时生成讨论问题，不编造检索或评论经历。')
+        source_text=st.text_area('参考原帖链接，每行一条，最多10条',help='仅随素材保存在本机，不发送给模型，不自动采集，不代表已经核验原帖。')
+    st.caption('当前未接入真实站内检索或9张截图自动识别；这里选择的是按你描述整理的内容方向。日记方向需填本人真实记录。')
     st.caption('生成3个标题、150–300字正文、5个话题和4张原创文字图卡。密钥仅读取本机环境变量、Streamlit Secrets或.local/generation.json。规则检查不代替人工健康事实核查。')
     if st.button('一键生成文案和原创图卡',type='primary'):
         try:
             try: secret_config=dict(st.secrets)
             except FileNotFoundError: secret_config={}
             with st.spinner('正在生成文案与图卡，请勿重复点击…'):
-                draft=generate(topic,provider,settings(BASE,secret_config))
-                root=build_bundle(draft,LOCAL/'bundles'/uuid.uuid4().hex)
+                links=source_links_valid([line.strip() for line in source_text.splitlines() if line.strip()])
+                draft=generate(topic,provider,settings(BASE,secret_config),direction,reference_notes)
+                root=build_bundle(draft,LOCAL/'bundles'/uuid.uuid4().hex,source_links=links,direction=direction)
                 m,files,_=load_bundle(root)
             st.session_state['generated_titles']=draft.titles
             st.session_state['imported']={'title':m.title,'body':m.body,'tags':' '.join(m.tags),'images':[str(p) for p in files]}
@@ -149,7 +158,7 @@ with material:
             rights=st.checkbox('我有权发布这些文字和图片，已完成健康事实核查，并确认账号、内容和AI声明真实',key='rights_'+fingerprint)
             permitted=st.checkbox('我已核对平台当前规则，确认此次本地网页自动化操作在允许范围内',key='permitted_'+fingerprint)
             retry=st.checkbox('仅重新准备上次“尚未提交”就失败的同一素材（不会重发已提交任务）',key='retry_'+fingerprint)
-            if st.button('确认并发布到小红书',type='primary',disabled=changed or not account or not rights or not permitted or session_state(LOCAL).get('state')!='ready'):
+            if st.button('确认并发布到小红书',type='primary',disabled=changed or not account or not rights or not permitted or session_state(LOCAL).get('state')=='busy'):
                 job,created=JOURNAL.reserve(account,fingerprint,retry)
                 if created:
                     args=['--bundle',preview['root'],'--approved-hash',fingerprint,'--job-id',job]
@@ -160,7 +169,7 @@ with material:
                         st.error(str(exc))
                         st.stop()
                     st.session_state['active_job']=job
-                    st.info('已启动一次发布任务，请勿关闭独立浏览器。可在发布记录查看真实状态。')
+                    st.info('已确认本次一键发布。若平台要求登录，请本人扫码；账号核验通过后自动继续，无需再点发布。请勿关闭独立浏览器。')
                 else:
                     st.session_state['active_job']=job
                     st.info('同一账号与素材已有任务，本次未启动重复发布；请查看原记录。')
@@ -173,6 +182,8 @@ with history:
         for job in JOURNAL.history():
             with st.expander(f"{labels.get(job['state'],job['state'])} · {job['result'].get('title','图文任务')} · {job['id'][:8]}"):
                 st.json(job)
+                if job['state']=='preparing' and job['result'].get('stage')=='awaiting_manual_login':
+                    st.warning('本次发布已获确认，正在等待你本人扫码登录；成功核验同一账号后自动继续，不需要再点发布。')
                 url=job['result'].get('note_url')
                 if url: st.link_button('查看笔记链接',url)
                 if job['result'].get('code')=='LOGIN_REQUIRED':

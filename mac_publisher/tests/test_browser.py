@@ -148,3 +148,20 @@ def test_page_diagnostics_never_include_url_query_or_fragment(context):
     diagnostic=BrowserAdapter(context).diagnostics()
     assert diagnostic['controlled_path']=='/login'
     assert 'private' not in str(diagnostic) and 'token' not in str(diagnostic)
+
+
+def test_topic_option_with_view_count_is_selected(context):
+    adapter=BrowserAdapter(context)
+    adapter.page.set_content('''<body><div class="ql-editor" contenteditable="true"></div><div class="topic-item" onclick="let a=document.createElement('a');a.className='topic';a.textContent='#减脂日常';document.querySelector('.ql-editor').appendChild(a);this.remove()">#减脂日常 <span>16.3亿浏览</span></div></body>''')
+    adapter._tag('减脂日常')
+    assert adapter.selected_topics()==['减脂日常']
+    assert adapter.submits==0
+
+
+def test_matching_onboarding_tip_closes_without_removing_ui(context):
+    adapter=BrowserAdapter(context)
+    adapter.page.set_content('''<body><section role="dialog"><p>图片可以编辑啦，快来试试吧</p><button aria-label="关闭" onclick="this.parentElement.hidden=true">×</button></section><button>发布</button></body>''')
+    adapter.dismiss_editor_tips()
+    assert not adapter.page.get_by_role('dialog').is_visible()
+    assert adapter.page.get_by_role('button',name='发布',exact=True).is_visible()
+    assert adapter.submits==0

@@ -33,3 +33,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.7 same-tab account continuity
 44 tests pass, including 15 offline Chromium cases. New cases verify existing creator tab reused without creating or closing tabs, tab-scoped sessionStorage survives baseline inspection, multiple creator tabs stop rather than guess, diagnostics omit URL query/fragment. No live Mac/Xiaohongshu publication verified.
+
+## v0.3.0 editorial direction and approved one-click continuation
+54 tests passed, including 17 offline real Chromium cases. Coverage: approved publication waits for manual login and resumes once; changed materials or wrong account cannot continue; challenge does not auto-resume; topic candidate with view count selectable; scoped onboarding close; five editorial directions, diary data requirement, white PNG cards, local-only source URLs, fabricated browsing history rejected. No live paid API call, no real Xiaohongshu publication or Mac end-to-end verification.

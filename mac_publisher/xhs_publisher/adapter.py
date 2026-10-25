@@ -101,6 +101,30 @@ class BrowserAdapter:
     if observed:
         raise PublishError('ACCOUNT_MISMATCH','页面识别到的账号与绑定账号不同，尚未提交；请核对右上角账号')
     raise PublishError('ACCOUNT_NAME_UNREADABLE','已打开官方页面，但15秒内未能唯一识别账号名称；请保留页面以适配，尚未提交')
+ def wait_for_manual_login(self,expected,timeout=180):
+    deadline=time.monotonic()+timeout
+    while time.monotonic()<deadline:
+        try:
+            name=self.current_account()
+            if name==norm(expected): return
+            if name: raise PublishError('ACCOUNT_MISMATCH','扫码后的账号与已确认发布账号不一致，尚未提交')
+        except PublishError as exc:
+            if exc.code not in {'LOGIN_REQUIRED','LOGIN_OR_VERIFICATION','PAGE_NOT_READY'}: raise
+        self.page.wait_for_timeout(500)
+    raise PublishError('LOGIN_TIMEOUT','等待本人登录超时，已停止任务；尚未提交')
+ def dismiss_editor_tips(self):
+    hint=self.page.get_by_text('图片可以编辑啦，快来试试吧',exact=True)
+    for text in hint.all():
+        if not text.is_visible(): continue
+        container=text
+        for _ in range(4):
+            container=container.locator('xpath=..')
+            if len(container.inner_text())>600: break
+            close=visible_one(container,['button[aria-label="关闭"]','[aria-label="Close"]','.close','.close-icon'])
+            if not close:
+                buttons=[b for b in container.get_by_role('button',name='关闭',exact=True).all() if b.is_visible()]
+                close=buttons[0] if len(buttons)==1 else None
+            if close: close.click(timeout=3000);return
  def open(self):
     # Reuse the already authenticated live page instead of forcing another redirect.
     if urlsplit(self.page.url).hostname=='creator.xiaohongshu.com':
@@ -208,9 +232,11 @@ class BrowserAdapter:
         if self.image_count()==len(files) and not self.upload_pending(): break
         self.page.wait_for_timeout(500)
     else: raise PublishError('UPLOAD_NOT_CONFIRMED','未核验全部图片上传完成，尚未提交')
+    self.dismiss_editor_tips()
     self._editor('title').fill(manifest.title)
     self._editor('body').fill(manifest.body)
     for tag in manifest.tags: self._tag(tag)
+    self._editor('body').press('Escape')
     self._declaration(['AI生成','AI内容','含AI'],self.selectors['ai_toggle'],manifest.ai_generated,manifest.ai_generated)
     self._declaration(['原创声明','声明原创'],self.selectors['original_toggle'],manifest.original_content,False)
  def image_count(self):
@@ -235,7 +261,7 @@ class BrowserAdapter:
         self.guard()
         for css in self.selectors['topic_options']:
             for option in self.page.locator(css).all():
-                if option.is_visible() and norm(option.inner_text()).lstrip('#')==tag:
+                if option.is_visible() and re.fullmatch(re.escape(tag)+r'(?:\s+\d[\d.,]*(?:万|亿|千|w|W)?(?:次)?(?:浏览|阅读|观看))?',norm(option.inner_text()).lstrip('#')) is not None:
                     option.click(timeout=3000)
                     if tag not in self.selected_topics(): raise PublishError('TOPIC_NOT_VERIFIED','已点击话题但未核验关联结果，尚未提交')
                     return

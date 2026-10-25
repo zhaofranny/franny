@@ -9,7 +9,7 @@ DEFAULTS={
  'cards':['.note-list .note-item','.note-card','[data-note-id]'],
  'card_title':['.note-title','.title','h3'],
  'card_status':['.note-status','.publish-status','.status'],
- 'topic_options':['.topic-list .topic-item','.mention-item','.topic-suggestion-item'],
+ 'topic_options':['[role="option"]','.topic-item','.topic-list .topic-item','.mention-item','.topic-suggestion-item'],
  'selected_topics':['.tiptap a[data-type="topic"]','.ql-editor a.topic','.tiptap .topic-tag','.ql-editor .topic-tag'],
  'ai_toggle':['[data-testid="ai-declaration"] input[type="checkbox"]'],
  'original_toggle':['[data-testid="original-declaration"] input[type="checkbox"]'],

@@ -65,3 +65,41 @@ def test_ui_generate_handoff(monkeypatch):
     assert not app.exception
     assert app.session_state['preview']['fingerprint']
     assert next(b for b in app.button if b.label=='确认并发布到小红书').disabled
+
+
+def test_diary_requires_records_before_any_request(monkeypatch):
+    monkeypatch.setattr('urllib.request.urlopen',lambda *a,**k:pytest.fail('No fabricated diary requests'))
+    with pytest.raises(ProductionError,match='真实记录'):generate('晚餐日记','DeepSeek',{},'真实记录日记')
+
+
+def test_source_links_saved_locally_and_white_cards(tmp_path):
+    from PIL import Image
+    link='https://www.xiaohongshu.com/discovery/item/'+'a'*24
+    root=build_bundle(Draft(**data()),tmp_path/'bundle',source_links=[link],direction='评论区经验求证')
+    assert json.loads((root/'editorial.json').read_text())['source_links']==[link]
+    assert json.loads((root/'editorial.json').read_text())['source_status']=='user_supplied_not_independently_verified'
+    with Image.open(root/'images/01.png') as image:assert image.getpixel((0,0))==(255,255,255)
+
+
+def test_reference_urls_not_sent_to_model(monkeypatch):
+    def response(req,**kwargs):
+        payload=json.loads(req.data)
+        assert 'https://www.xiaohongshu.com' not in str(payload)
+        assert '评论区经验求证' in str(payload)
+        class Response:
+            def __enter__(self):return self
+            def __exit__(self,*args):pass
+            def read(self,*args):return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(data())}}]}).encode()
+        return Response()
+    monkeypatch.setattr('urllib.request.urlopen',response)
+    generate('晚餐讨论','DeepSeek',{'DEEPSEEK_API_KEY':'test-key'},'评论区经验求证','参考主题：主食选择 https://www.xiaohongshu.com/explore/example')
+
+
+def test_fabricated_browsing_experience_rejected_without_sources(monkeypatch):
+    d=data();d['body']='最近刷到一群人都说这样好。'+d['body']
+    class Response:
+        def __enter__(self):return self
+        def __exit__(self,*args):pass
+        def read(self,*args):return json.dumps({'choices':[{'finish_reason':'stop','message':{'content':json.dumps(d)}}]}).encode()
+    monkeypatch.setattr('urllib.request.urlopen',lambda *a,**k:Response())
+    with pytest.raises(ProductionError,match='虚构'):generate('晚餐讨论','DeepSeek',{'DEEPSEEK_API_KEY':'test-key'})

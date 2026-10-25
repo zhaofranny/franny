@@ -62,3 +62,51 @@ def test_login_failure_preserves_stage_and_local_screenshot(tmp_path):
     assert result['result']['stage']=='open_creator'
     assert result['result']['failure_screenshot']=='failure.png'
     assert (artifacts/'failure.png').is_file()
+
+
+def test_one_approved_click_waits_for_login_then_submits_once(tmp_path):
+    root,fp,journal=setup(tmp_path)
+    class NeedsLogin(Adapter):
+        logged=False
+        waits=0
+        def open(self):
+            if not self.logged:raise PublishError('LOGIN_REQUIRED','请本人扫码')
+        def wait_for_manual_login(self,account):
+            assert account=='测试账号'
+            self.waits+=1;self.logged=True
+    adapter=NeedsLogin();result=publish(adapter,journal,root,fp,'测试账号')
+    assert result['state']=='published' and adapter.waits==1 and adapter.clicks==1
+    assert publish(adapter,journal,root,fp,'测试账号')['id']==result['id']
+    assert adapter.clicks==1
+
+
+def test_login_wait_material_changes_cannot_submit(tmp_path):
+    root,fp,journal=setup(tmp_path)
+    class Changed(Adapter):
+        def open(self):raise PublishError('LOGIN_REQUIRED','请本人扫码')
+        def wait_for_manual_login(self,account):
+            Image.new('RGB',(64,64),'red').save(root/'1.png')
+    adapter=Changed();result=publish(adapter,journal,root,fp,'测试账号')
+    assert result['result']['code']=='MATERIAL_CHANGED' and adapter.clicks==0
+
+
+def test_challenge_never_auto_resumes(tmp_path):
+    root,fp,journal=setup(tmp_path)
+    class Challenged(Adapter):
+        def open(self):raise PublishError('PLATFORM_VERIFICATION','需要安全验证')
+        def wait_for_manual_login(self,account):pytest.fail('Must stop on challenge')
+    adapter=Challenged()
+    assert publish(adapter,journal,root,fp,'测试账号')['state']=='blocked'
+    assert adapter.clicks==0
+
+
+def test_login_with_different_account_does_not_continue(tmp_path):
+    root,fp,journal=setup(tmp_path)
+    class WrongAccount(Adapter):
+        logged=False
+        def open(self):
+            if not self.logged:raise PublishError('LOGIN_REQUIRED','请本人扫码')
+        def wait_for_manual_login(self,account):self.logged=True
+        def current_account(self):return '另一个账号'
+    adapter=WrongAccount();result=publish(adapter,journal,root,fp,'测试账号')
+    assert result['state']=='blocked' and adapter.clicks==0

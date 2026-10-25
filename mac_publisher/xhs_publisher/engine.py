@@ -23,14 +23,24 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
         if not created: return journal.get(job)
     submitted=False
     stage="open_creator"
+    def with_login(action):
+        try: return action()
+        except PublishError as exc:
+            if exc.code!='LOGIN_REQUIRED' or not hasattr(adapter,'wait_for_manual_login'): raise
+            journal.update(job,'preparing',stage='awaiting_manual_login',message='请在独立Chrome中本人扫码登录，账号核验通过后自动继续本次已确认任务，无需再次点击发布')
+            adapter.wait_for_manual_login(account)
+            if load_bundle(root)[2]!=fingerprint:
+                raise PublishError('MATERIAL_CHANGED','等待登录时素材已变化，本次不会继续提交')
+            journal.update(job,'preparing',stage='resuming_after_login',message='登录账号已核对，继续本次已确认发布任务')
+            return action()  # Only a pre-submit login interruption may resume, once.
     try:
-        adapter.open()
+        with_login(adapter.open)
         stage="verify_account"
         verify_account(adapter,account)
         stage="read_baseline"
-        baseline=adapter.baseline()
+        baseline=with_login(adapter.baseline)
         stage="prepare_editor"
-        adapter.prepare(manifest,files)
+        with_login(lambda:adapter.prepare(manifest,files))
         stage="verify_editor"
         adapter.verify(manifest,len(files))
         if load_bundle(root)[2]!=fingerprint: raise PublishError('MATERIAL_CHANGED','准备期间素材发生变化，尚未提交')
@@ -39,9 +49,9 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
         if artifact_dir:
             artifact_dir=Path(artifact_dir);artifact_dir.mkdir(parents=True,exist_ok=True)
             adapter.screenshot(artifact_dir/'before_submit.png')
-        journal.update(job,'ready',message='页面图片、文字、话题和声明已核对')
+        journal.update(job,'ready',stage='ready',message='页面图片、文字、话题和声明已核对')
         # Durable boundary BEFORE the click: even a crash/timeout cannot permit blind resubmission.
-        journal.update(job,'submitting',title=manifest.title)
+        journal.update(job,'submitting',stage='submit',title=manifest.title)
         submitted=True
         stage="submit"
         adapter.submit_once()
@@ -55,7 +65,7 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
             import re
             if not re.fullmatch(r'[a-f0-9]{24}',result.get('note_id','')) or result.get('note_url')!='https://www.xiaohongshu.com/explore/'+result['note_id']:
                 raise PublishError('INVALID_RECEIPT','回执缺少可核验笔记ID或链接')
-        journal.update(job,state,**result)
+        journal.update(job,state,stage='verify_receipt',**result)
     except Exception as exc:
         known=isinstance(exc,PublishError)
         code=exc.code if known else 'LOCAL_BROWSER_ERROR'
