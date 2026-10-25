@@ -85,3 +85,7 @@ streamlit run publisher_app.py --server.address 127.0.0.1 --server.port 8503
 ### v0.2.3 账号名称核验
 
 兼容右上角账号名称不带旧版CSS类的布局，读取可见DOM位置而非接口或内部状态；核验时最多等待15秒允许异步加载。保留唯一名称与完全匹配校验，正文中的同名文字不能作为账号依据。账号不一致与无法识别分别报告`ACCOUNT_MISMATCH`和`ACCOUNT_NAME_UNREADABLE`，都不会点击提交。仍以浏览器显示名核验，不是不可变的官方账号ID。
+
+### v0.2.4 窗口唤起与状态修复
+
+已有实时会话时，登录按钮改为向同一浏览器发送前台唤起请求（Playwright bring_to_front，Mac通过系统osascript激活Chrome）。不重复启动浏览器，不覆盖为“正在启动”。若macOS未能激活窗口，页面明确提示按Control+上箭头查找窗口；已就绪时不再显示陈旧的启动提示。唤起请求绝不发布内容。macOS窗口激活仍需本机验证。

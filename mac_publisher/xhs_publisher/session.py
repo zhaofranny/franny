@@ -23,6 +23,25 @@ def enqueue(local,bundle,approved_hash,job_id,retry=False):
     atomic_json(Path(local)/'requests'/(state['session']+'-'+job_id+'.json'),request)
     return state['pid']
 
+def request_focus(local):
+    import uuid
+    state=session_state(local)
+    if state.get('state') not in {'ready','busy'}:
+        raise SessionUnavailable('没有可唤起的浏览器会话，请先打开浏览器登录')
+    atomic_json(Path(local)/'requests'/(state['session']+'-focus'+uuid.uuid4().hex+'.json'),{'session':state['session'],'action':'focus'})
+    return state['pid']
+
+def focus_browser(page):
+    import sys
+    import subprocess
+    page.bring_to_front()
+    # Playwright activates the tab; macOS also needs application activation.
+    if sys.platform=='darwin':
+        application='org.chromium.Chromium' if not os.getenv('XHS_BROWSER_PATH') else 'com.google.Chrome'
+        result=subprocess.run(['osascript','-e','tell application id "'+application+'" to activate'],capture_output=True,timeout=5)
+        if result.returncode: raise SessionUnavailable('macOS未能切到浏览器前台，请按Control+上箭头查找独立Chrome窗口')
+
+
 def run_session(adapter,journal,base,account):
     import uuid
     base=Path(base);local=base/'.local';token=uuid.uuid4().hex
@@ -44,6 +63,13 @@ def run_session(adapter,journal,base,account):
                 try:
                     request=json.loads(processing.read_text())
                     if request.get('session')!=token: continue
+                    if request.get('action')=='focus':
+                        try:
+                            focus_browser(adapter.page)
+                            atomic_json(local/'login_status.json',{'state':'logged_in','message':'已请求将现有小红书窗口切到前台，不会重复启动浏览器'})
+                        except Exception:
+                            atomic_json(local/'login_status.json',{'state':'focus_failed','message':'窗口仍在运行，但未能切到前台；请按Control+上箭头，选择小红书创作服务平台窗口'})
+                        continue
                     job=journal.get(request.get('job_id',''))
                     if not job or job['state']!='preparing' or job['account']!=account: continue
                     status('busy')

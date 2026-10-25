@@ -21,3 +21,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.3 account DOM compatibility
 28 tests passed, including 5 real offline Chromium tests. New browser cases: delayed top-right account name without legacy CSS, body mention cannot impersonate account, missing name differs from a mismatch. No live website/API calls or publication. Sandbox initially prevented Chromium launch; rerun with approved local browser execution passed all tests.
+
+## v0.2.4 focus and UI status
+26 targeted non-browser tests pass including active-session login click -> focus handoff without launching a duplicate process, focus requests cannot publish, and no contradictory starting status. macOS osascript activation cannot be verified on Linux; prior v0.2.3 offline-browser account tests unchanged.

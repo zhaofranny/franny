@@ -55,3 +55,44 @@ def test_old_session_queue_never_published(tmp_path,monkeypatch):
     monkeypatch.setattr('xhs_publisher.engine.publish',lambda *args,**kwargs:pytest.fail('stale task replayed'))
     run_session(SimpleNamespace(page=Page()),journal,tmp_path,'account')
     assert journal.get(job)['state']=='failed_pre_submit'
+
+
+def test_focus_existing_session_does_not_enqueue_publish(tmp_path):
+    from xhs_publisher.session import request_focus
+    import json
+    atomic_json(tmp_path/'browser_session.json',{'session':'live','pid':os.getpid(),'state':'ready','heartbeat':time.time()})
+    assert request_focus(tmp_path)==os.getpid()
+    command=json.loads(next((tmp_path/'requests').glob('*.json')).read_text())
+    assert command=={'session':'live','action':'focus'}
+
+
+def test_focus_request_brings_same_page_forward_without_publishing(tmp_path,monkeypatch):
+    local=tmp_path/'.local';journal=Journal(local)
+    monkeypatch.setattr('uuid.uuid4',lambda:SimpleNamespace(hex='live'))
+    atomic_json(local/'requests'/'live-focus.json',{'session':'live','action':'focus'})
+    class Page:
+        closed=False
+        focused=0
+        def is_closed(self):return self.closed
+        def wait_for_timeout(self,ms):self.closed=True
+        def bring_to_front(self):self.focused+=1
+    page=Page()
+    monkeypatch.setattr('xhs_publisher.session.focus_browser',lambda p:p.bring_to_front())
+    monkeypatch.setattr('xhs_publisher.engine.publish',lambda *a,**k:pytest.fail('focus must never publish'))
+    run_session(SimpleNamespace(page=page),journal,tmp_path,'account')
+    assert page.focused==1
+    assert not journal.history()
+
+
+def test_ui_existing_session_login_click_requests_focus(monkeypatch):
+    from pathlib import Path
+    from streamlit.testing.v1 import AppTest
+    import xhs_publisher.session as session
+    requests=[]
+    monkeypatch.setattr(session,'session_state',lambda _: {'state':'ready','pid':os.getpid(),'session':'live'})
+    monkeypatch.setattr(session,'request_focus',lambda _:requests.append('focus') or os.getpid())
+    app=AppTest.from_file(str(Path(__file__).parents[1]/'publisher_app.py'),default_timeout=15).run()
+    next(b for b in app.button if b.label=='打开浏览器，手动登录').click().run()
+    assert not app.exception
+    assert requests==['focus']
+    assert not any('正在启动独立浏览器' in message.value for message in app.info)

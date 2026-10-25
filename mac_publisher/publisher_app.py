@@ -9,7 +9,7 @@ import streamlit as st
 from xhs_publisher import VERSION
 from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
 from xhs_publisher.journal import Journal,atomic_json
-from xhs_publisher.session import session_state,enqueue,SessionUnavailable
+from xhs_publisher.session import session_state,enqueue,request_focus,SessionUnavailable
 from xhs_publisher.production import SPECS,settings,generate,build_bundle,ProductionError
 
 BASE=Path(__file__).resolve().parent
@@ -25,7 +25,11 @@ def start(action,*extra):
         args=dict(zip(extra[::2],extra[1::2]))
         return enqueue(LOCAL,args['--bundle'],args['--approved-hash'],args['--job-id'],'--retry-preparation' in extra)
     active=session_state(LOCAL)
-    if active.get('state') in {'ready','busy'}: return active['pid']
+    if active.get('state') in {'ready','busy'}:
+        pid=request_focus(LOCAL)
+        atomic_json(LOCAL/'login_status.json',{'state':'focusing','message':'正在唤起已有小红书窗口，不会重复打开浏览器…'})
+        return pid
+    atomic_json(LOCAL/'login_status.json',{'state':'starting','message':'正在启动独立浏览器…'})
     command=[sys.executable,'-m','xhs_publisher.worker',action,'--base',str(BASE),*extra]
     log=(LOCAL/'worker.log').open('a',encoding='utf-8')
     try: return subprocess.Popen(command,cwd=BASE,stdout=log,stderr=log,start_new_session=True).pid
@@ -40,16 +44,20 @@ with login:
     st.write('首次使用先手动登录。浏览器数据只保存在本机专用配置目录，不读取你的日常Chrome配置，也不导出Cookie。')
     st.caption('使用前需确认你的操作符合平台当前规则。出现登录、验证码或风控时，由你手动处理，工具不会绕过。')
     if st.button('打开浏览器，手动登录'):
-        atomic_json(LOCAL/'login_status.json',{'state':'starting','message':'正在打开独立浏览器…'})
-        st.session_state['login_pid']=start('login')
+        try: st.session_state['login_pid']=start('login')
+        except SessionUnavailable as exc: st.error(str(exc))
     @st.fragment(run_every=2)
     def login_progress():
         state=read_json(LOCAL/'login_status.json')
-        if state: st.info(state.get('message',state['state']))
+        active=session_state(LOCAL)
+        if state and not (active.get('state') in {'ready','busy'} and state.get('state')=='starting'):
+            st.info(state.get('message',state['state']))
         account=read_json(LOCAL/'account.json')
         if account: st.success('本地绑定的浏览器显示名：'+account['account_name'])
         active=session_state(LOCAL)
-        if active.get('state')=='ready': st.success('实时浏览器会话已就绪，请保持独立Chrome打开')
+        if active.get('state')=='ready':
+            st.success('实时浏览器会话已就绪。点击上方按钮可唤起现有窗口，无需重复登录')
+            st.caption('若窗口被遮住：按Control+上箭头，选择小红书创作服务平台窗口。')
         elif active.get('state')=='busy': st.info('同一浏览器正在执行任务，请查看③发布记录')
         else: st.warning('当前没有就绪的实时浏览器会话。绑定名称只是历史记录，请点击上方登录按钮。')
     login_progress()
