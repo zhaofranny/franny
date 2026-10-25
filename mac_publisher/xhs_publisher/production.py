@@ -91,7 +91,7 @@ def generate(topic,provider,config,direction="邪修减肥",reference_notes=""):
 标题3个分别用反问/反差、具体生活场景、轻吐槽或经验征集。避免三条同义改写和套话；允许“不是？、谁懂、姐妹们”等自然网感，不夸大流量。
 结构：一句具体矛盾/问题开场→2–3个可讨论的场景或选择→一句简短事实边界→一个能回答的互动问题。不要写教科书式科普，也不空喊自律。
 参考摘要是用户提供、尚未独立核实的材料，只借鉴主题与结构，不逐句改写或拼接，不把偏方报告当科学结论。无摘要时禁止“我刷到一群人、评论区都说、有人反馈”等伪造来源；无本人真实记录时禁止“我以前也这样、我试过、我瘦了”等虚构经历。不可把给出的互动数字当成已核验数据。
-封面只写一个悬念，不写效果承诺；正文必须回答封面问题。不要说已经检索、核实、实测或保证爆款。"""
+封面只写一个悬念，不写效果承诺；用2–4个完整短语分行，使用JSON换行符，避免拆开主食、减肥等完整词；正文必须回答封面问题。不要说已经检索、核实、实测或保证爆款。"""
     safe_notes=re.sub(r'https?://\S+','[参考链接仅本机保存]',reference_notes)
     payload={'model':config.get(modelname) or default,'messages':[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'topic':topic,'direction':direction,'user_supplied_reference_summary':safe_notes},ensure_ascii=False)}],'response_format':{'type':'json_object'},'max_tokens':1800}
     req=urllib.request.Request(url,json.dumps(payload).encode(),headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'})
@@ -134,21 +134,34 @@ def build_bundle(draft,root,title_index=0,source_links=(),direction="邪修减�
     font=font_path();images=[]
     for i,text in enumerate([draft.cover,*draft.cards]):
         image=Image.new('RGB',(1080,1440),'#FFFFFF');draw=ImageDraw.Draw(image)
-        draw.rounded_rectangle((65,65,1015,1375),radius=40,outline='#111111',width=5)
-        draw.text((110,120),direction+' · 一起聊聊',font=ImageFont.truetype(font,38),fill='#111111')
-        size=100 if i==0 else 60
+        size=192 if i==0 else 68
         while True:
-            face=ImageFont.truetype(font,size);lines=wrap(draw,text,face,840)
-            if len(lines)*(size+25)<=930 or size<=30: break
+            face=ImageFont.truetype(font,size)
+            if i==0:
+                # Prefer a bold face in a font collection when the OS provides it.
+                for index in range(12):
+                    try:
+                        candidate=ImageFont.truetype(font,size,index=index)
+                        if any(word in candidate.getname()[1].lower() for word in ['bold','heavy','semibold']):
+                            face=candidate;break
+                    except OSError: break
+            lines=([line.strip() for line in text.splitlines() if line.strip()] if i==0 and '\n' in text else wrap(draw,text,face,880))
+            gap=round(size*.28)
+            heights=[draw.textbbox((0,0),line or ' ',font=face,stroke_width=2 if i==0 else 0)[3]-draw.textbbox((0,0),line or ' ',font=face,stroke_width=2 if i==0 else 0)[1] for line in lines]
+            total=sum(heights)+gap*max(0,len(lines)-1)
+            if (total<=1120 and all(draw.textlength(line,font=face)<=880 for line in lines)) or size<=32:break
             size-=4
-        y=300
-        for line in lines:
-            draw.text((120,y),line,font=face,fill='#111111');y+=size+25
-        draw.text((110,1290),f'AI辅助创作 · 一般生活建议  {i+1}/4',font=ImageFont.truetype(font,28),fill='#58685E')
+        y=(1440-total)/2
+        for line,height in zip(lines,heights):
+            if i==0:
+                draw.text((540,y),line,font=face,fill='#000000',anchor='mt',stroke_width=2,stroke_fill='#000000')
+            else:
+                draw.text((100,y),line,font=face,fill='#000000',anchor='lt')
+            y+=height+gap
         relative=f'images/{i+1:02d}.png';image.save(root/relative);images.append(relative)
     manifest=Manifest(title=draft.titles[title_index],body=draft.body,tags=draft.tags,images=images,ai_generated=True,original_content=True)
     atomic_json(root/'manifest.json',manifest.model_dump())
     atomic_json(root/'draft.json',draft.model_dump())
-    atomic_json(root/'editorial.json',{'direction':direction,'source_links':links,'source_status':'user_supplied_not_independently_verified','design':'white_background_black_text'})
+    atomic_json(root/'editorial.json',{'direction':direction,'source_links':links,'source_status':'user_supplied_not_independently_verified','design':'pure_white_large_black_cover_no_frame_or_footer'})
     load_bundle(root)
     return root
