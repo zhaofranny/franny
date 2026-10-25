@@ -69,3 +69,7 @@ streamlit run publisher_app.py --server.address 127.0.0.1 --server.port 8503
 ### 保留原环境升级
 
 退出原Streamlit终端（Control+C），下载新版ZIP并解压，在新目录`mac_publisher`双击`upgrade.command`。脚本只更新程序，保留原目录`.local`、`.venv`和`output`，自动使用系统Chrome，避免再次下载浏览器。默认原目录为`~/Downloads/franny-feature-mac-oneclick-publisher/mac_publisher`。原目录不同可手动复制`publisher_app.py`、`start.command`和`xhs_publisher/*.py`，不要替换/删除数据目录。
+
+### v0.2.1 失败诊断
+
+发布失败后保留独立Chrome窗口最多5分钟，不再立即关闭。任务已经停止，不会因手动登录而自动继续发布。关闭此独立窗口后再操作登录/重试，避免配置目录锁冲突。发布记录显示失败阶段，提供本机`output/<任务ID>/failure.png`（若浏览器已退出则无法截图）。截图可能含个人信息，不会上传，分享前请遮挡隐私。此版本改善诊断和窗口保留，不代表已解决Mac上的登录失效或验证了真实发布。

@@ -138,7 +138,13 @@ with history:
                 st.json(job)
                 url=job['result'].get('note_url')
                 if url: st.link_button('查看笔记链接',url)
-                path=BASE/'output'/job['id']/'before_submit.png'
+                if job['result'].get('code')=='LOGIN_REQUIRED':
+                    st.warning('本次在提交前遇到登录页。先查看保留的Chrome窗口；关闭该窗口后再到①重新登录，不必重新生成素材。')
+                failure=BASE/'output'/job['id']/'failure.png'
+                if failure.is_file():
+                    st.caption('失败页面截图仅保存在本机，可能包含个人信息；请先遮挡隐私再分享。')
+                    with st.expander('查看失败时的小红书页面'): st.image(str(failure))
+                path=BASE/'output'/job['id']/'before_submit.png' 
                 if path.is_file(): st.image(str(path),caption='提交前页面，仅保存在本机')
                 st.download_button('下载此任务记录',json.dumps(job,ensure_ascii=False,indent=2),job['id']+'.json',key='receipt_'+job['id'])
     jobs_progress()

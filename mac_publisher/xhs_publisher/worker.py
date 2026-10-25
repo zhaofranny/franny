@@ -47,6 +47,15 @@ def run(args):
           account=json.loads(account_file.read_text(encoding='utf-8'))['account_name']
           result=publish(adapter,journal,args.bundle,args.approved_hash,account,job_id=args.job_id,retry_prepare=args.retry_preparation,artifact_dir=base/'output'/args.job_id if args.job_id else base/'output'/'cli')
           atomic_json(base/'output'/result['id']/'result.json',result)
+          if result['state'] not in {'published','pending_review'}:
+              # Preserve the failed official page for manual inspection, never retry a click.
+              journal.update(result['id'],result['state'],browser_message='自动任务已停止，浏览器保留最多5分钟供查看；关闭该窗口后可重新登录。不会自动继续或重发。')
+              deadline=time.monotonic()+300
+              while time.monotonic()<deadline:
+                  try:
+                      if adapter.page.is_closed(): break
+                      adapter.page.wait_for_timeout(1000)
+                  except Exception: break
           return 0 if result['state'] in {'published','pending_review'} else 2
         finally: ctx.close()
     except Exception as exc:

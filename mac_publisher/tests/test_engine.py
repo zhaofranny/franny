@@ -49,3 +49,16 @@ def test_missing_receipt_is_not_success(tmp_path):
     adapter=NoReceipt()
     assert publish(adapter,journal,root,fp,'测试账号')['state']=='submitted_unverified'
     assert adapter.clicks==1
+
+
+def test_login_failure_preserves_stage_and_local_screenshot(tmp_path):
+    root,fp,journal=setup(tmp_path)
+    class LoginFailure(Adapter):
+        def open(self):raise PublishError('LOGIN_REQUIRED','需要登录')
+        def screenshot(self,path):Image.new('RGB',(20,20),'white').save(path)
+    adapter=LoginFailure();artifacts=tmp_path/'artifacts'
+    result=publish(adapter,journal,root,fp,'测试账号',artifact_dir=artifacts)
+    assert result['state']=='blocked' and adapter.clicks==0
+    assert result['result']['stage']=='open_creator'
+    assert result['result']['failure_screenshot']=='failure.png'
+    assert (artifacts/'failure.png').is_file()
