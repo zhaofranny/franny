@@ -36,3 +36,25 @@ def test_verification_screen_stops_browser(context):
     adapter=BrowserAdapter(context);adapter.page.set_content('<body>请完成安全验证</body>')
     with pytest.raises(PublishError) as err:adapter.guard()
     assert err.value.code=='PLATFORM_VERIFICATION'
+
+
+def test_header_name_without_legacy_css_and_delayed_render(context):
+    adapter=BrowserAdapter(context)
+    adapter.page.set_content('''<html><body><nav>首页 笔记管理 发布笔记</nav><div style="position:fixed;right:40px;top:20px" id="account"></div><script>setTimeout(()=>{document.getElementById('account').textContent='ins审美搬运小工'},300)</script></body></html>''')
+    adapter.verify_account('ins审美搬运小工',timeout=2)
+    assert adapter.current_account()=='ins审美搬运小工'
+    assert adapter.submits==0
+
+
+def test_body_mention_does_not_verify_account(context):
+    adapter=BrowserAdapter(context)
+    adapter.page.set_content('<body><div style="position:fixed;right:40px;top:20px">另一个账号</div><div style="margin-top:200px">ins审美搬运小工</div></body>')
+    with pytest.raises(PublishError) as exc: adapter.verify_account('ins审美搬运小工',timeout=0)
+    assert exc.value.code=='ACCOUNT_MISMATCH'
+    assert adapter.submits==0
+
+
+def test_missing_account_is_distinct_from_mismatch(context):
+    adapter=BrowserAdapter(context);adapter.page.set_content('<body><div>首页</div></body>')
+    with pytest.raises(PublishError) as exc: adapter.verify_account('ins审美搬运小工',timeout=0)
+    assert exc.value.code=='ACCOUNT_NAME_UNREADABLE'

@@ -18,3 +18,6 @@ Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布
 
 ## v0.2.2 session handoff
 23 targeted tests passed: same login adapter receives one publication request; stale or closed sessions cannot queue; old session requests never replay; original engine safety, local Chinese cards, generated-editor-preview integration still pass. No real provider charge or Xiaohongshu publication tested from cloud.
+
+## v0.2.3 account DOM compatibility
+28 tests passed, including 5 real offline Chromium tests. New browser cases: delayed top-right account name without legacy CSS, body mention cannot impersonate account, missing name differs from a mismatch. No live website/API calls or publication. Sandbox initially prevented Chromium launch; rerun with approved local browser execution passed all tests.

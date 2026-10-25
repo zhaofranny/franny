@@ -3,6 +3,13 @@ from .bundle import load_bundle, BundleError
 from .adapter import PublishError
 
 
+def verify_account(adapter,account):
+    if hasattr(adapter,'verify_account'):
+        adapter.verify_account(account)
+    elif adapter.current_account()!=account:
+        raise PublishError('ACCOUNT_NOT_VERIFIED','当前浏览器账号与已绑定账号不一致或无法核验，尚未提交')
+
+
 def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare=False,artifact_dir=None):
     manifest,files,fingerprint=load_bundle(root)
     if fingerprint!=approved_hash: raise BundleError('素材在确认后发生变化，请重新预览确认；尚未提交')
@@ -19,7 +26,7 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
     try:
         adapter.open()
         stage="verify_account"
-        if adapter.current_account()!=account: raise PublishError('ACCOUNT_NOT_VERIFIED','当前浏览器账号与已绑定账号不一致或无法核验，尚未提交')
+        verify_account(adapter,account)
         stage="read_baseline"
         baseline=adapter.baseline()
         stage="prepare_editor"
@@ -28,7 +35,7 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
         adapter.verify(manifest,len(files))
         if load_bundle(root)[2]!=fingerprint: raise PublishError('MATERIAL_CHANGED','准备期间素材发生变化，尚未提交')
         stage="verify_account"
-        if adapter.current_account()!=account: raise PublishError('ACCOUNT_CHANGED','提交前账号无法核验，尚未提交')
+        verify_account(adapter,account)
         if artifact_dir:
             artifact_dir=Path(artifact_dir);artifact_dir.mkdir(parents=True,exist_ok=True)
             adapter.screenshot(artifact_dir/'before_submit.png')
@@ -53,7 +60,7 @@ def publish(adapter,journal,root,approved_hash,account,job_id=None,retry_prepare
         known=isinstance(exc,PublishError)
         code=exc.code if known else 'LOCAL_BROWSER_ERROR'
         message=str(exc) if known else '浏览器或本地存储操作异常；不公开原始异常与会话信息'
-        state='unknown' if submitted else ('blocked' if code in {'LOGIN_REQUIRED','LOGIN_OR_VERIFICATION','PLATFORM_VERIFICATION','ACCOUNT_NOT_VERIFIED'} else 'failed_pre_submit')
+        state='unknown' if submitted else ('blocked' if code in {'LOGIN_REQUIRED','LOGIN_OR_VERIFICATION','PLATFORM_VERIFICATION','ACCOUNT_NOT_VERIFIED','ACCOUNT_MISMATCH','ACCOUNT_NAME_UNREADABLE'} else 'failed_pre_submit')
         diagnostic={'stage':stage,'error_type':type(exc).__name__ if type(exc).__module__ in {'builtins','playwright._impl._errors'} else 'PublishError'}
         if artifact_dir:
             try:

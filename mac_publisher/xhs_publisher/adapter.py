@@ -43,14 +43,42 @@ class BrowserAdapter:
     for css in ['.login-modal','.login-container','.captcha-container']:
         if any(x.is_visible() for x in page.locator(css).all()):
             raise PublishError('LOGIN_OR_VERIFICATION','需要手动登录或验证，已停止自动操作')
+ def _header_names(self,page):
+    # Read only rendered DOM in the top-right account area. No private API/state.
+    return page.locator('body').evaluate(r"""body => {
+      const names = new Set();
+      for (const el of body.querySelectorAll('span,a,p,div')) {
+        if (el.children.length) continue;
+        const r=el.getBoundingClientRect();
+        const style=getComputedStyle(el);
+        if (r.width<=0 || r.height<=0 || r.top<0 || r.bottom>85 || r.left<innerWidth*.65 || style.visibility==='hidden' || style.display==='none' || style.opacity==='0') continue;
+        const text=(el.innerText||'').replace(/\s+/g,' ').trim();
+        if (text && text.length<=80 && !['登录','注册','消息','帮助','反馈','退出登录'].includes(text)) names.add(text);
+      }
+      return [...names];
+    }""")
  def current_account(self,page=None):
     page=page or self.page;self.guard(page)
+    names=self._header_names(page)
+    if len(names)==1: return names[0]
+    found=set()
     for css in self.selectors['account']:
         for el in page.locator(css).all():
             if el.is_visible():
                 name=norm(el.inner_text(timeout=2000))
-                if name and len(name)<=80 and name not in {'登录','注册'}: return name
-    return None
+                if name and len(name)<=80 and name not in {'登录','注册'}: found.add(name)
+    return next(iter(found)) if len(found)==1 else None
+ def verify_account(self,expected,timeout=15):
+    deadline=time.monotonic()+timeout
+    observed=None
+    while True:
+        observed=self.current_account()
+        if observed==norm(expected): return
+        if time.monotonic()>=deadline: break
+        self.page.wait_for_timeout(250)
+    if observed:
+        raise PublishError('ACCOUNT_MISMATCH','页面识别到的账号与绑定账号不同，尚未提交；请核对右上角账号')
+    raise PublishError('ACCOUNT_NAME_UNREADABLE','已打开官方页面，但15秒内未能唯一识别账号名称；请保留页面以适配，尚未提交')
  def open(self): self.navigate(self.page,HOME)
  def _manager(self):
     page=self.context.new_page()
