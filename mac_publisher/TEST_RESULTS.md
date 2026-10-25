@@ -11,3 +11,7 @@
 - 没有真实小红书发布记录；本环境网络策略未开放官方创作者域名，未使用用户浏览器或凭据。
 
 Mac首次运行、真实登录DOM、话题关联、AI声明控件及真实发布结果尚未验收。当前默认选择器来自公开页面结构的研究，可能与账号实际界面不同；程序会停在对应步骤，不能承诺直接发布一定成功。没有删除旧项目文件或数据库，没有修改线上部署分支。
+
+## v0.2 production integration
+
+18 targeted tests passed (2026-10-25): generated draft -> four distinct Chinese PNG cards -> validated bundle -> editor -> preview; publish disabled without approval/account; missing-key no request; redacted429; unsafe card rejected; existing bundle/engine deduplication and ambiguous-result protections. Streamlit AppTest has no exceptions and three tabs. Shell scripts pass bash syntax checks. API calls mocked: no paid request, no live Mac or Xiaohongshu publication verified in cloud.

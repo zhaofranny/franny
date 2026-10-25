@@ -9,6 +9,7 @@ import streamlit as st
 from xhs_publisher import VERSION
 from xhs_publisher.bundle import Manifest,load_bundle,import_zip,BundleError
 from xhs_publisher.journal import Journal,atomic_json
+from xhs_publisher.production import SPECS,settings,generate,build_bundle,ProductionError
 
 BASE=Path(__file__).resolve().parent
 LOCAL=BASE/'.local';LOCAL.mkdir(exist_ok=True);LOCAL.chmod(0o700)
@@ -43,6 +44,28 @@ with login:
         if account: st.success('本地绑定的浏览器显示名：'+account['account_name'])
     login_progress()
 with material:
+    st.subheader('选题 → 原创文案与图卡 → 发布')
+    provider=st.selectbox('文案模型服务',list(SPECS))
+    topic=st.text_input('今天的选题','减脂人，别再和意志力硬刚了',max_chars=300)
+    st.caption('生成3个标题、150–300字正文、5个话题和4张原创文字图卡。密钥仅读取本机环境变量、Streamlit Secrets或.local/generation.json。规则检查不代替人工健康事实核查。')
+    if st.button('一键生成文案和原创图卡',type='primary'):
+        try:
+            try: secret_config=dict(st.secrets)
+            except FileNotFoundError: secret_config={}
+            with st.spinner('正在生成文案与图卡，请勿重复点击…'):
+                draft=generate(topic,provider,settings(BASE,secret_config))
+                root=build_bundle(draft,LOCAL/'bundles'/uuid.uuid4().hex)
+                m,files,_=load_bundle(root)
+            st.session_state['generated_titles']=draft.titles
+            st.session_state['imported']={'title':m.title,'body':m.body,'tags':' '.join(m.tags),'images':[str(p) for p in files]}
+            st.session_state['editor_key']=uuid.uuid4().hex
+            st.session_state.pop('preview',None)
+            st.rerun()
+        except ProductionError as exc: st.error(str(exc))
+        except Exception: st.error('素材生产未完成，未启动发布。请检查本机配置、字体及磁盘权限。')
+    if st.session_state.get('generated_titles'):
+        st.success('文案与4张图卡已保存到本机并填入下方编辑器。核对内容后点击生成本地预览，再确认发布。')
+        for candidate in st.session_state['generated_titles']: st.write('备选标题：'+candidate)
     st.write('导入现有Franny导出的待审核ZIP（必须含真实图片），或自行输入标题、正文和原创图片。默认不会发布。')
     zipped=st.file_uploader('导入素材 ZIP',type=['zip'],key='bundle_zip')
     if zipped and st.button('读取素材包'):

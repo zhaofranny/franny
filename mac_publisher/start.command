@@ -22,7 +22,10 @@ if [[ "$REQ_HASH" != "$OLD_HASH" ]]; then
   .venv/bin/python -m pip install --cache-dir .local/pip-cache -r requirements.txt
   printf '%s' "$REQ_HASH" > .local/requirements.sha256
 fi
-if ! .venv/bin/python -c 'from pathlib import Path; from playwright.sync_api import sync_playwright; p=sync_playwright().start(); exists=Path(p.chromium.executable_path).is_file(); p.stop(); raise SystemExit(0 if exists else 1)'; then
+if [[ -z "${XHS_BROWSER_PATH:-}" && -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
+  export XHS_BROWSER_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+fi
+if [[ -z "${XHS_BROWSER_PATH:-}" ]] && ! .venv/bin/python -c 'from pathlib import Path; from playwright.sync_api import sync_playwright; p=sync_playwright().start(); exists=Path(p.chromium.executable_path).is_file(); p.stop(); raise SystemExit(0 if exists else 1)'; then
   .venv/bin/python -m playwright install chromium
 fi
 .venv/bin/python -m xhs_publisher.doctor > .local/environment_check.json

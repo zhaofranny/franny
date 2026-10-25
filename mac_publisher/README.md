@@ -46,3 +46,26 @@ streamlit run publisher_app.py --server.address 127.0.0.1 --server.port 8503
 ```
 
 测试使用合成素材及模拟发布页面/回执，不发送到小红书，不把模拟成功当作真实发布成功。环境报告见ENVIRONMENT_CHECK.json，具体结果见TEST_RESULTS.md。
+
+## v0.2：生产与发布在一个页面完成
+
+点击「② 预览与发布」，选择模型、填写选题，点击「一键生成文案和原创图卡」。程序在线生成3个标题、150–300字正文、5个话题，并用本机中文字体渲染4张1080×1440原创PNG文字图卡；不是AI照片或他人图片。生成结果保存在`.local/bundles/`并自动填入下方编辑器。可更换备选标题、编辑正文，点击生成本地预览、核对后确认发布，不必导入导出ZIP。生成失败不发布，修改内容必须重新预览。
+
+### 本机模型配置（云端Secrets不会同步到Mac）
+
+在Mac本项目`.local/generation.json`中配置以下内容，密钥替换为你在对应官方平台取得的真实密钥。不要上传这个文件，也不要将密钥发送到聊天中。建议文件权限`chmod 600 .local/generation.json`。
+
+```json
+{
+  "DEEPSEEK_API_KEY": "",
+  "DEEPSEEK_MODEL": "deepseek-chat"
+}
+```
+
+也支持环境变量或本机`.streamlit/secrets.toml`，优先级环境变量、本机Secrets、本机JSON。千问使用`DASHSCOPE_API_KEY`、`QWEN_MODEL`（默认qwen-plus）；OpenAI使用`OPENAI_API_KEY`、`OPENAI_MODEL`（默认gpt-4o-mini）。只连接对应官方固定域名，不自动切换服务或重试付费请求。模型名应以账户实际支持的型号为准，可在配置中覆盖。模型API需有可用额度，Codex套餐不包含这些API额度。
+
+健康表述规则检查不等于医学事实核查，发布前必须人工审核。没有实时检索、没有宣称已验证科学证据，也不保证爆款。线上模型内容以及本机字体生成需在Mac实测；云端测试使用模拟API响应，未执行真实付费请求或小红书发布。
+
+### 保留原环境升级
+
+退出原Streamlit终端（Control+C），下载新版ZIP并解压，在新目录`mac_publisher`双击`upgrade.command`。脚本只更新程序，保留原目录`.local`、`.venv`和`output`，自动使用系统Chrome，避免再次下载浏览器。默认原目录为`~/Downloads/franny-feature-mac-oneclick-publisher/mac_publisher`。原目录不同可手动复制`publisher_app.py`、`start.command`和`xhs_publisher/*.py`，不要替换/删除数据目录。
